@@ -49,10 +49,8 @@ const statusStyles: Record<string, string> = {
 };
 
 const trustColor = (score: number) => {
-  if (score >= 0.85)
-    return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200";
-  if (score >= 0.6)
-    return "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200";
+  if (score >= 0.85) return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200";
+  if (score >= 0.6) return "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200";
   return "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200";
 };
 
@@ -68,6 +66,9 @@ export default function Dashboard() {
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [searching, setSearching] = useState(false);
   const [searchDone, setSearchDone] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const [scanResult, setScanResult] = useState<any>(null);
+  const [draftingId, setDraftingId] = useState<string | null>(null);
 
   async function handleSearch(e: React.FormEvent) {
     e.preventDefault();
@@ -90,21 +91,57 @@ export default function Dashboard() {
     }
   }
 
+  async function handleRiskScan() {
+    setScanning(true);
+    setScanResult(null);
+    try {
+      const res = await fetch("/api/risk-scan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const data = await res.json();
+      setScanResult(data);
+      // Refresh items to show updated statuses
+      const { data: refreshed } = await supabase
+        .from("items")
+        .select("*")
+        .order("created_at", { ascending: false });
+      if (refreshed) setItems(refreshed);
+    } catch (err) {
+      console.error("Risk scan failed:", err);
+    } finally {
+      setScanning(false);
+    }
+  }
+
+  async function handleDraftFollowup(itemId: string) {
+    setDraftingId(itemId);
+    try {
+      const res = await fetch("/api/followup/draft", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ item_id: itemId }),
+      });
+      const data = await res.json();
+      if (data.escalation_id) {
+        alert(`Follow-up drafted for ${data.owner}!\n\n"${data.draft}"\n\nGo to Approval Queue to approve or reject.`);
+      } else {
+        alert("Failed to draft: " + (data.error || "unknown error"));
+      }
+    } catch (err) {
+      console.error("Draft failed:", err);
+    } finally {
+      setDraftingId(null);
+    }
+  }
+
   useEffect(() => {
     async function fetchData() {
       const [itemsRes, meetingsRes, contradictionsRes] = await Promise.all([
-        supabase
-          .from("items")
-          .select("*")
-          .order("created_at", { ascending: false }),
-        supabase
-          .from("meetings")
-          .select("*")
-          .order("created_at", { ascending: false }),
-        supabase
-          .from("contradictions")
-          .select("*")
-          .order("detected_at", { ascending: false }),
+        supabase.from("items").select("*").order("created_at", { ascending: false }),
+        supabase.from("meetings").select("*").order("created_at", { ascending: false }),
+        supabase.from("contradictions").select("*").order("detected_at", { ascending: false }),
       ]);
 
       setItems(itemsRes.data || []);
@@ -142,22 +179,20 @@ export default function Dashboard() {
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-lg bg-blue-100 dark:bg-blue-900 flex items-center justify-center">
-              <span className="text-blue-700 dark:text-blue-300 text-lg">
-                ⎈
-              </span>
+              <span className="text-blue-700 dark:text-blue-300 text-lg">⎈</span>
             </div>
-            <h1 className="text-xl font-semibold text-gray-900 dark:text-white">
-              Helm
-            </h1>
+            <h1 className="text-xl font-semibold text-gray-900 dark:text-white">Helm</h1>
           </div>
-          {/* <div className="text-sm text-gray-500 dark:text-gray-400">
-            {meetings.length} meetings · {items.length} items tracked
-          </div> */}
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
             <span className="text-sm text-gray-500 dark:text-gray-400">
               {meetings.length} meetings · {items.length} items tracked
             </span>
-
+            <a
+              href="/followups"
+              className="px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+            >
+              Approval queue
+            </a>
             <a
               href="/upload"
               className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors"
@@ -205,51 +240,30 @@ export default function Dashboard() {
                 Results for &quot;{searchQuery}&quot;
               </h3>
               <button
-                onClick={() => {
-                  setSearchDone(false);
-                  setSearchResults([]);
-                  setSearchQuery("");
-                }}
+                onClick={() => { setSearchDone(false); setSearchResults([]); setSearchQuery(""); }}
                 className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
               >
                 Clear
               </button>
             </div>
             {searchResults.length === 0 ? (
-              <p className="text-sm text-blue-700 dark:text-blue-300">
-                No results found.
-              </p>
+              <p className="text-sm text-blue-700 dark:text-blue-300">No results found.</p>
             ) : (
               <div className="space-y-3">
                 {searchResults.map((r, i) => (
-                  <div
-                    key={i}
-                    className="bg-white dark:bg-gray-900 rounded-lg p-3 border border-blue-100 dark:border-blue-900"
-                  >
+                  <div key={i} className="bg-white dark:bg-gray-900 rounded-lg p-3 border border-blue-100 dark:border-blue-900">
                     <div className="flex items-start justify-between gap-2 mb-1">
-                      <p className="text-sm text-gray-900 dark:text-white">
-                        {r.text}
-                      </p>
-                      <span className="shrink-0 text-xs text-blue-600 dark:text-blue-400 font-mono">
-                        {r.score}
-                      </span>
+                      <p className="text-sm text-gray-900 dark:text-white">{r.text}</p>
+                      <span className="shrink-0 text-xs text-blue-600 dark:text-blue-400 font-mono">{r.score}</span>
                     </div>
                     <div className="flex flex-wrap gap-2 text-xs text-gray-500 dark:text-gray-400">
-                      <span>
-                        {r.type === "decision" ? "📌" : "📋"} {r.type}
-                      </span>
+                      <span>{r.type === "decision" ? "📌" : "📋"} {r.type}</span>
                       {r.owner !== "unassigned" && <span>👤 {r.owner}</span>}
                       <span>🎙️ {r.meeting_title}</span>
-                      <span
-                        className={`px-1.5 py-0.5 rounded-full ${trustColor(r.trust_score)}`}
-                      >
-                        🛡️ {r.trust_score}
-                      </span>
+                      <span className={`px-1.5 py-0.5 rounded-full ${trustColor(r.trust_score)}`}>🛡️ {r.trust_score}</span>
                     </div>
                     {r.supersedes_hint && (
-                      <p className="text-xs mt-1 text-amber-600 dark:text-amber-400">
-                        ↩️ {r.supersedes_hint}
-                      </p>
+                      <p className="text-xs mt-1 text-amber-600 dark:text-amber-400">↩️ {r.supersedes_hint}</p>
                     )}
                     {r.source_quote && (
                       <p className="text-xs mt-1 italic text-gray-400 dark:text-gray-500 border-l-2 border-gray-200 dark:border-gray-700 pl-2">
@@ -264,24 +278,28 @@ export default function Dashboard() {
         )}
 
         {/* Metric cards */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-8">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
           <MetricCard label="Action items" value={actionItems.length} />
           <MetricCard label="Decisions" value={decisions.length} />
-          <MetricCard
-            label="At risk"
-            value={atRisk.length}
-            color={atRisk.length > 0 ? "amber" : undefined}
-          />
-          <MetricCard
-            label="Blocked"
-            value={blocked.length}
-            color={blocked.length > 0 ? "red" : undefined}
-          />
-          <MetricCard
-            label="Completed"
-            value={done.length}
-            color={done.length > 0 ? "green" : undefined}
-          />
+          <MetricCard label="At risk" value={atRisk.length} color={atRisk.length > 0 ? "amber" : undefined} />
+          <MetricCard label="Blocked" value={blocked.length} color={blocked.length > 0 ? "red" : undefined} />
+          <MetricCard label="Completed" value={done.length} color={done.length > 0 ? "green" : undefined} />
+        </div>
+
+        {/* Risk scan button */}
+        <div className="flex items-center gap-3 mb-8">
+          <button
+            onClick={handleRiskScan}
+            disabled={scanning}
+            className="px-4 py-2 rounded-lg border border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300 text-sm hover:bg-amber-50 dark:hover:bg-amber-950 disabled:opacity-50 transition-colors"
+          >
+            {scanning ? "Scanning..." : "⚡ Run risk scan"}
+          </button>
+          {scanResult && (
+            <span className="text-xs text-gray-500 dark:text-gray-400">
+              Evaluated {scanResult.evaluated} items · {scanResult.transitions?.length || 0} status changes
+            </span>
+          )}
         </div>
 
         {/* Main grid */}
@@ -289,14 +307,14 @@ export default function Dashboard() {
           {/* Left column — items */}
           <div className="lg:col-span-2 space-y-4">
             <SectionTitle icon="📋" title="Action items" />
-            {actionItems.length === 0 && (
-              <EmptyState text="No action items yet" />
-            )}
+            {actionItems.length === 0 && <EmptyState text="No action items yet" />}
             {actionItems.map((item) => (
               <ItemCard
                 key={item.id}
                 item={item}
                 meetingTitle={meetingMap.get(item.meeting_id)}
+                onDraftFollowup={handleDraftFollowup}
+                draftingId={draftingId}
               />
             ))}
 
@@ -304,11 +322,7 @@ export default function Dashboard() {
               <SectionTitle icon="📌" title="Decisions" />
               {decisions.length === 0 && <EmptyState text="No decisions yet" />}
               {decisions.map((item) => (
-                <ItemCard
-                  key={item.id}
-                  item={item}
-                  meetingTitle={meetingMap.get(item.meeting_id)}
-                />
+                <ItemCard key={item.id} item={item} meetingTitle={meetingMap.get(item.meeting_id)} />
               ))}
             </div>
           </div>
@@ -320,11 +334,7 @@ export default function Dashboard() {
               <div>
                 <SectionTitle icon="🔴" title="Quarantined (low trust)" />
                 {quarantined.map((item) => (
-                  <ItemCard
-                    key={item.id}
-                    item={item}
-                    meetingTitle={meetingMap.get(item.meeting_id)}
-                  />
+                  <ItemCard key={item.id} item={item} meetingTitle={meetingMap.get(item.meeting_id)} />
                 ))}
               </div>
             )}
@@ -334,32 +344,21 @@ export default function Dashboard() {
               <div>
                 <SectionTitle icon="🟡" title="Needs review" />
                 {needsReview.map((item) => (
-                  <ItemCard
-                    key={item.id}
-                    item={item}
-                    meetingTitle={meetingMap.get(item.meeting_id)}
-                  />
+                  <ItemCard key={item.id} item={item} meetingTitle={meetingMap.get(item.meeting_id)} />
                 ))}
               </div>
             )}
 
             {/* Contradictions */}
             <div>
-              <SectionTitle
-                icon="⚠️"
-                title={`Contradictions (${contradictions.length})`}
-              />
-              {contradictions.length === 0 && (
-                <EmptyState text="No contradictions detected" />
-              )}
+              <SectionTitle icon="⚠️" title={`Contradictions (${contradictions.length})`} />
+              {contradictions.length === 0 && <EmptyState text="No contradictions detected" />}
               {contradictions.map((c) => (
                 <div
                   key={c.id}
                   className="bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 rounded-xl p-4 mb-3"
                 >
-                  <p className="text-sm text-amber-900 dark:text-amber-200">
-                    {c.description}
-                  </p>
+                  <p className="text-sm text-amber-900 dark:text-amber-200">{c.description}</p>
                   <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
                     Detected {new Date(c.detected_at).toLocaleDateString()}
                   </p>
@@ -371,17 +370,16 @@ export default function Dashboard() {
             <div>
               <SectionTitle icon="🎙️" title="Meetings" />
               {meetings.map((m) => (
-                <div
+                <a
                   key={m.id}
-                  className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-4 mb-3"
+                  href={`/meetings/${m.id}`}
+                  className="block bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-4 mb-3 hover:border-blue-300 dark:hover:border-blue-700 transition-colors"
                 >
-                  <p className="text-sm font-medium text-gray-900 dark:text-white">
-                    {m.title}
-                  </p>
+                  <p className="text-sm font-medium text-gray-900 dark:text-white">{m.title}</p>
                   <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                     {new Date(m.date).toLocaleDateString()}
                   </p>
-                </div>
+                </a>
               ))}
             </div>
           </div>
@@ -430,25 +428,25 @@ function SectionTitle({ icon, title }: { icon: string; title: string }) {
 }
 
 function EmptyState({ text }: { text: string }) {
-  return (
-    <p className="text-sm text-gray-400 dark:text-gray-600 py-4">{text}</p>
-  );
+  return <p className="text-sm text-gray-400 dark:text-gray-600 py-4">{text}</p>;
 }
 
 function ItemCard({
   item,
   meetingTitle,
+  onDraftFollowup,
+  draftingId,
 }: {
   item: Item;
   meetingTitle?: string;
+  onDraftFollowup?: (id: string) => void;
+  draftingId?: string | null;
 }) {
   return (
     <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-4 mb-3 hover:border-gray-300 dark:hover:border-gray-700 transition-colors">
       {/* Top row — text + status */}
       <div className="flex items-start justify-between gap-3 mb-2">
-        <p className="text-sm text-gray-900 dark:text-white leading-relaxed">
-          {item.text}
-        </p>
+        <p className="text-sm text-gray-900 dark:text-white leading-relaxed">{item.text}</p>
         <span
           className={`shrink-0 text-xs font-medium px-2.5 py-0.5 rounded-full ${statusStyles[item.status] || statusStyles.open}`}
         >
@@ -459,7 +457,9 @@ function ItemCard({
       {/* Meta row */}
       <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
         {item.owner && (
-          <span className="flex items-center gap-1">👤 {item.owner}</span>
+          <span className="flex items-center gap-1">
+            👤 {item.owner}
+          </span>
         )}
         {item.deadline_raw && (
           <span className="flex items-center gap-1">
@@ -467,12 +467,12 @@ function ItemCard({
           </span>
         )}
         {meetingTitle && (
-          <span className="flex items-center gap-1">🎙️ {meetingTitle}</span>
+          <span className="flex items-center gap-1">
+            🎙️ {meetingTitle}
+          </span>
         )}
         {/* Trust badge */}
-        <span
-          className={`px-2 py-0.5 rounded-full text-xs font-medium ${trustColor(item.trust_score)}`}
-        >
+        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${trustColor(item.trust_score)}`}>
           🛡️ {item.trust_score}
         </span>
       </div>
@@ -510,6 +510,17 @@ function ItemCard({
             &quot;{item.source_quote}&quot;
           </p>
         </details>
+      )}
+
+      {/* Draft follow-up button — only on at-risk/blocked items */}
+      {onDraftFollowup && (item.status === "at_risk" || item.status === "blocked") && (
+        <button
+          onClick={() => onDraftFollowup(item.id)}
+          disabled={draftingId === item.id}
+          className="mt-3 text-xs px-3 py-1.5 rounded-lg bg-amber-100 dark:bg-amber-900 text-amber-700 dark:text-amber-300 hover:bg-amber-200 dark:hover:bg-amber-800 disabled:opacity-50 transition-colors"
+        >
+          {draftingId === item.id ? "Drafting..." : "✉️ Draft follow-up"}
+        </button>
       )}
     </div>
   );
