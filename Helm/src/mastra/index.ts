@@ -8,13 +8,22 @@ import { Observability, MastraStorageExporter, MastraPlatformExporter, Sensitive
 import { weatherWorkflow } from './workflows/weather-workflow';
 import { weatherAgent } from './agents/weather-agent';
 import { toolCallAppropriatenessScorer, completenessScorer, translationScorer } from './scorers/weather-scorer';
+import { itemCountScorer, ownerAccuracyScorer, typeAccuracyScorer, sourceQuotePresenceScorer } from './scorers/extraction-scorer';
 import { extractionAgent } from "./agents/extraction-agent";
 
 
 export const mastra = new Mastra({
   workflows: { weatherWorkflow },
   agents: { weatherAgent,extractionAgent  },
-  scorers: { toolCallAppropriatenessScorer, completenessScorer, translationScorer },
+  scorers: {
+    toolCallAppropriatenessScorer,
+    completenessScorer,
+    translationScorer,
+    itemCountScorer,
+    ownerAccuracyScorer,
+    typeAccuracyScorer,
+    sourceQuotePresenceScorer,
+  },
   storage: new MastraCompositeStore({
     id: 'composite-storage',
     default: new LibSQLStore({

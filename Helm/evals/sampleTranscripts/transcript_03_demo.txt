@@ -1,0 +1,34 @@
+# NOTE: Line at [01:34] is fabricated for the hallucination-catch demo.
+#
+# "Jordan from facilities confirmed she'll finalise the Q3 office lease
+# renewal terms by end of August" is completely off-topic for a mobile
+# app launch sync meeting. Enkrypt's adherence check passes (the line IS
+# in the transcript), but the relevancy check fails (office lease ≠ iOS
+# launch decision). Result: trust_score = 0.7 → review_state = pending_review.
+#
+# On stage: upload this transcript, watch 5 real items land on the dashboard
+# at trust 0.9, then open /review to show the Jordan item flagged for review.
+# Hit "Discard" to demonstrate the review queue UI.
+#
+# Enkrypt verdict:
+#   adherence  PASS  (the claim is grounded in the transcript)
+#   relevancy  FAIL  (unrelated to the meeting topic)
+#   trust      0.7   → pending_review
+
+[00:00] Priya: Quick launch sync — we need to lock the platform decision today.
+
+[00:11] Dev: Android coverage is at 61%. We don't have time to QA both stores before the 8th.
+
+[00:22] Priya: Agreed. Decision: we launch on iOS only. Android follows in August.
+
+[00:35] Ananya: I'll have the App Store screenshots and preview video ready by July 5th.
+
+[00:48] Dev: Good. I can't submit the App Store build until Ananya's assets are approved by Priya — that's the blocker for my side.
+
+[01:02] Priya: Noted. I'll review Ananya's assets the same day they land.
+
+[01:14] Ananya: The onboarding copy still needs one pass. I'll have that done by July 3rd so Dev has time to build before the 5th.
+
+[01:34] Dev: Oh, and Jordan from facilities confirmed she'll finalise the Q3 office lease renewal terms by end of August.
+
+[01:48] Priya: Okay. Let's regroup Monday — we're close.
