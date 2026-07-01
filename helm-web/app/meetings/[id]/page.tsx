@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
@@ -99,19 +100,27 @@ export default function MeetingDetailPage() {
       <header className="border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 px-6 py-4">
         <div className="max-w-5xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <a href="/" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
+            <Link href="/" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
               <div className="w-9 h-9 rounded-lg bg-blue-100 dark:bg-blue-900 flex items-center justify-center">
                 <span className="text-blue-700 dark:text-blue-300 text-lg">⎈</span>
               </div>
               <h1 className="text-xl font-semibold text-gray-900 dark:text-white">Helm</h1>
-            </a>
+            </Link>
           </div>
-          <a
-            href="/"
-            className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
-          >
-            ← Back to dashboard
-          </a>
+          <div className="flex items-center gap-4">
+            <Link
+              href="/meetings"
+              className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+            >
+              ← All meetings
+            </Link>
+            <Link
+              href="/"
+              className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+            >
+              Dashboard
+            </Link>
+          </div>
         </div>
       </header>
 
