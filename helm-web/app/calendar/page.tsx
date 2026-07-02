@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
+import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import type { CalendarEvent } from "../components/calendar/CalendarGrid";
 
@@ -78,11 +79,19 @@ export default function CalendarPage() {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6 md:px-6">
-      <div className="mb-4">
-        <h1 className="text-xl font-semibold text-white">Calendar</h1>
-        <p className="mt-1 text-sm text-slate-400">
-          Item deadlines and scheduled meetings. Click an event to open it.
-        </p>
+      <div className="mb-4 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-semibold text-white">Calendar</h1>
+          <p className="mt-1 text-sm text-slate-400">
+            Item deadlines and scheduled meetings. Click an event to open it.
+          </p>
+        </div>
+        <Link
+          href="/rooms/new"
+          className="shrink-0 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+        >
+          + New room
+        </Link>
       </div>
 
       {/* Legend */}
