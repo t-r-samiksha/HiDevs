@@ -23,6 +23,11 @@ export async function POST(req: NextRequest) {
         .update({ review_state: "auto" })
         .eq("id", item_id);
       if (error) throw new Error(error.message);
+      await supabase.from("audit_logs").insert({
+        change_type: "eval_positive_example",
+        entity: item_id,
+        triggered_by: "review_queue",
+      });
       return NextResponse.json({ ok: true });
     }
 
@@ -31,11 +36,23 @@ export async function POST(req: NextRequest) {
       if (!trimmed) {
         return NextResponse.json({ error: "text is required for edit" }, { status: 400 });
       }
+      const { data: before } = await supabase
+        .from("items")
+        .select("text")
+        .eq("id", item_id)
+        .single();
       const { error } = await supabase
         .from("items")
         .update({ text: trimmed, review_state: "auto" })
         .eq("id", item_id);
       if (error) throw new Error(error.message);
+      await supabase.from("audit_logs").insert({
+        change_type: "eval_soft_negative",
+        entity: item_id,
+        old_value: { text: before?.text ?? null },
+        new_value: { text: trimmed },
+        triggered_by: "review_queue",
+      });
       return NextResponse.json({ ok: true });
     }
 
@@ -44,6 +61,12 @@ export async function POST(req: NextRequest) {
       await supabase.from("escalation_logs").delete().eq("item_id", item_id);
       const { error } = await supabase.from("items").delete().eq("id", item_id);
       if (error) throw new Error(error.message);
+      await supabase.from("audit_logs").insert({
+        change_type: "eval_negative_example",
+        entity: item_id,
+        driving_signal: "review_discard",
+        triggered_by: "review_queue",
+      });
       return NextResponse.json({ ok: true });
     }
   } catch (error: any) {

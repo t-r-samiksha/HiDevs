@@ -22,9 +22,16 @@ Address the owner by name. Output ONLY the message text, nothing else.
 
 export async function POST(req: NextRequest) {
   try {
-    const { item_id } = await req.json();
+    const body = await req.json();
+    const { item_id, tier = 1 } = body;
 
-    // Fetch the item
+    if (!item_id) {
+      return NextResponse.json({ error: "item_id is required" }, { status: 400 });
+    }
+    if (![1, 2, 3].includes(tier)) {
+      return NextResponse.json({ error: "tier must be 1, 2, or 3" }, { status: 400 });
+    }
+
     const { data: item, error } = await supabase
       .from("items")
       .select("*")
@@ -35,18 +42,77 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Item not found" }, { status: 404 });
     }
 
-    // Draft the nudge
-    const prompt = `Draft a Tier 1 follow-up for this task:
+    // ── Tier 3: flag immediately, no draft ───────────────────────────────────
+    if (tier === 3) {
+      const { data: log, error: logErr } = await supabase
+        .from("escalation_logs")
+        .insert({
+          item_id: item.id,
+          tier: 3,
+          drafted_text: null,
+          status: "flagged",
+          policy_passed: null,
+        })
+        .select()
+        .single();
+
+      if (logErr) throw new Error(logErr.message);
+
+      return NextResponse.json({
+        escalation_id: log.id,
+        tier: 3,
+        needs_attention: true,
+        item_text: item.text,
+        owner: item.owner,
+        message: `"${item.text.slice(0, 80)}" has been flagged as needing immediate attention.`,
+      });
+    }
+
+    // ── Tier 2: look up manager ───────────────────────────────────────────────
+    let managerName: string | null = null;
+    if (tier === 2 && item.owner) {
+      const { data: ownerUser } = await supabase
+        .from("users")
+        .select("manager_id, name")
+        .eq("id", item.owner)
+        .single();
+
+      if (ownerUser?.manager_id) {
+        const { data: manager } = await supabase
+          .from("users")
+          .select("name")
+          .eq("id", ownerUser.manager_id)
+          .single();
+        managerName = manager?.name ?? null;
+      }
+    }
+
+    // ── Draft via agent ───────────────────────────────────────────────────────
+    let prompt: string;
+    if (tier === 2) {
+      const ccLine = managerName
+        ? `Looping in ${managerName} for visibility.`
+        : "Escalating for visibility.";
+      prompt = `Draft a Tier 2 escalation follow-up for this task:
+- Task: "${item.text}"
+- Owner: ${item.owner || "the assignee"}
+- Deadline: ${item.deadline_raw || "not specified"}
+- Status: ${item.status}
+
+Write a firm, professional message in this style:
+"Hi ${item.owner || "team"}, this is a follow-up regarding '${item.text.slice(0, 60)}' which was due ${item.deadline_raw || "recently"}. ${ccLine}"
+
+Output ONLY the message text.`;
+    } else {
+      prompt = `Draft a Tier 1 follow-up for this task:
 - Task: "${item.text}"
 - Owner: ${item.owner || "the assignee"}
 - Deadline: ${item.deadline_raw || "not specified"}
 - Status: ${item.status}
 Keep it gentle — this is the first nudge.`;
+    }
 
-    const response = await followupAgent.generate([
-      { role: "user", content: prompt },
-    ]);
-
+    const response = await followupAgent.generate([{ role: "user", content: prompt }]);
     const draft = response.text;
 
     // Enkrypt policy check
@@ -63,12 +129,11 @@ Keep it gentle — this is the first nudge.`;
       (enkryptData.summary?.policy_violation ?? 0) === 0 &&
       (enkryptData.summary?.toxicity ?? 0) === 0;
 
-    // Store in escalation_logs
     const { data: log, error: logErr } = await supabase
       .from("escalation_logs")
       .insert({
         item_id: item.id,
-        tier: 1,
+        tier,
         drafted_text: draft,
         status: "pending",
         policy_passed: policyPassed,
@@ -80,10 +145,13 @@ Keep it gentle — this is the first nudge.`;
 
     return NextResponse.json({
       escalation_id: log.id,
+      tier,
       draft,
       policy_passed: policyPassed,
+      needs_attention: false,
       owner: item.owner,
       item_text: item.text,
+      ...(tier === 2 && managerName ? { manager_cc: managerName } : {}),
     });
   } catch (error: any) {
     console.error("Follow-up draft error:", error);

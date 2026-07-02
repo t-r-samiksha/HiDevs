@@ -1,4 +1,10 @@
 import { Agent } from "@mastra/core/agent";
+import {
+  itemCountScorer,
+  ownerAccuracyScorer,
+  typeAccuracyScorer,
+  sourceQuotePresenceScorer,
+} from "../scorers/extraction-scorer";
 
 /**
  * Helm — Extraction Agent
@@ -18,6 +24,24 @@ export const extractionAgent = new Agent({
   id: "extraction-agent",
   name: "Extraction Agent",
   model: "google/gemini-2.5-flash",
+  scorers: {
+    itemCount: {
+      scorer: itemCountScorer,
+      sampling: { type: "ratio", rate: 1 },
+    },
+    ownerAccuracy: {
+      scorer: ownerAccuracyScorer,
+      sampling: { type: "ratio", rate: 1 },
+    },
+    typeAccuracy: {
+      scorer: typeAccuracyScorer,
+      sampling: { type: "ratio", rate: 1 },
+    },
+    sourceQuotePresence: {
+      scorer: sourceQuotePresenceScorer,
+      sampling: { type: "ratio", rate: 1 },
+    },
+  },
   instructions: `
 You read a meeting transcript and extract every DECISION and ACTION ITEM. You are
 precise and conservative: you never invent details that were not actually said.

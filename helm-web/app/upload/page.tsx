@@ -122,6 +122,7 @@ export default function UploadPage() {
 
       setStatus(data.steps || []);
       setStatus((prev) => [...prev, `Done! ${data.items_count} items extracted.`]);
+      setProcessing(false);
       setTimeout(() => router.push("/"), 2000);
     } catch (err: any) {
       setError(err.message || "Something went wrong");

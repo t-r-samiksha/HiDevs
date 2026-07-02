@@ -119,7 +119,7 @@ export default function FollowupsPage() {
                     </p>
 
                     {/* Draft */}
-                    <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 mb-4 border-l-3 border-blue-400">
+                    <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 mb-4 border-l-2 border-blue-400">
                       <p className="text-sm text-gray-800 dark:text-gray-200 italic leading-relaxed">
                         &quot;{esc.drafted_text}&quot;
                       </p>

@@ -29,10 +29,12 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Build FormData to forward to Groq
+  // Build FormData to forward to Groq — verbose_json gives segment timestamps
   const groqForm = new FormData();
   groqForm.append("file", file);
   groqForm.append("model", "whisper-large-v3");
+  groqForm.append("response_format", "verbose_json");
+  groqForm.append("timestamp_granularities[]", "segment");
 
   let groqRes: Response;
   try {
@@ -54,5 +56,20 @@ export async function POST(req: NextRequest) {
   }
 
   const result = await groqRes.json();
-  return NextResponse.json({ transcript: result.text ?? "" });
+
+  // Format as [MM:SS] text lines so the pipeline can chunk by timestamp
+  let transcript: string;
+  if (result.segments && Array.isArray(result.segments) && result.segments.length > 0) {
+    transcript = result.segments
+      .map((seg: any) => {
+        const mins = Math.floor((seg.start ?? 0) / 60);
+        const secs = Math.floor((seg.start ?? 0) % 60);
+        return `[${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}] ${String(seg.text ?? "").trim()}`;
+      })
+      .join("\n");
+  } else {
+    transcript = result.text ?? "";
+  }
+
+  return NextResponse.json({ transcript });
 }

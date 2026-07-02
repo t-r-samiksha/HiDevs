@@ -1,19 +1,32 @@
-# NOTE: Line at [01:34] is fabricated for the hallucination-catch demo.
+# DEMO TRANSCRIPT — two fabricated lines to showcase the full review pipeline.
 #
+# ── FABRICATED LINE 1: [01:22] ─────────────────────────────────────────────
+# "the board approved a $50,000 budget increase for Q3 marketing" is a
+# completely invented financial claim inserted by a developer who has no
+# authority to confirm board decisions.
+#
+# Enkrypt verdict:
+#   adherence  PASS  (the line is in the transcript, item is grounded in it)
+#   relevancy  FAIL  (Q3 marketing budget ≠ iOS launch sync)
+#   financial  FLAG  (item text contains a dollar amount → extra scrutiny tier)
+#   trust      0.4   → quarantined
+#
+# ── FABRICATED LINE 2: [01:34] ─────────────────────────────────────────────
 # "Jordan from facilities confirmed she'll finalise the Q3 office lease
-# renewal terms by end of August" is completely off-topic for a mobile
-# app launch sync meeting. Enkrypt's adherence check passes (the line IS
-# in the transcript), but the relevancy check fails (office lease ≠ iOS
-# launch decision). Result: trust_score = 0.7 → review_state = pending_review.
-#
-# On stage: upload this transcript, watch 5 real items land on the dashboard
-# at trust 0.9, then open /review to show the Jordan item flagged for review.
-# Hit "Discard" to demonstrate the review queue UI.
+# renewal terms by end of August" is off-topic for a mobile app launch sync.
+# No financial claim, so it lands in the softer review tier.
 #
 # Enkrypt verdict:
 #   adherence  PASS  (the claim is grounded in the transcript)
-#   relevancy  FAIL  (unrelated to the meeting topic)
+#   relevancy  FAIL  (office lease ≠ iOS launch decision)
+#   financial  NONE  (no dollar amount → standard off-topic tier)
 #   trust      0.7   → pending_review
+#
+# ── DEMO FLOW ───────────────────────────────────────────────────────────────
+# Upload transcript → 4 items auto-committed (trust 0.9) → open /review:
+#   • 1 item pending review  (Jordan / office lease)   — hit "Discard"
+#   • 1 item quarantined     (Dev / $50K board budget) — hit "Discard"
+# This demonstrates both the soft and hard guardrail tiers in one demo.
 
 [00:00] Priya: Quick launch sync — we need to lock the platform decision today.
 
@@ -28,6 +41,8 @@
 [01:02] Priya: Noted. I'll review Ananya's assets the same day they land.
 
 [01:14] Ananya: The onboarding copy still needs one pass. I'll have that done by July 3rd so Dev has time to build before the 5th.
+
+[01:22] Dev: Also, the board approved a $50,000 budget increase for Q3 marketing, so Priya should start planning the campaign immediately.
 
 [01:34] Dev: Oh, and Jordan from facilities confirmed she'll finalise the Q3 office lease renewal terms by end of August.
 

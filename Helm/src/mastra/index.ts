@@ -5,20 +5,54 @@ import { LibSQLStore } from '@mastra/libsql';
 import { DuckDBStore } from "@mastra/duckdb";
 import { MastraCompositeStore } from '@mastra/core/storage';
 import { Observability, MastraStorageExporter, MastraPlatformExporter, SensitiveDataFilter } from '@mastra/observability';
-import { weatherWorkflow } from './workflows/weather-workflow';
-import { weatherAgent } from './agents/weather-agent';
-import { toolCallAppropriatenessScorer, completenessScorer, translationScorer } from './scorers/weather-scorer';
-import { itemCountScorer, ownerAccuracyScorer, typeAccuracyScorer, sourceQuotePresenceScorer } from './scorers/extraction-scorer';
+
+// Workflows
+import { riskMonitorWorkflow } from './workflows/risk-monitor';
+import { followupHitlWorkflow, followupAgent } from './workflows/followup-hitl-workflow';
+import { reminderWorkflow } from './workflows/reminder-workflow';
+import { weeklyReportWorkflow } from './workflows/weekly-report-workflow';
+import { strategicInsightWorkflow } from './workflows/strategic-insight-workflow';
+
+// Agents
 import { extractionAgent } from "./agents/extraction-agent";
+import { supervisorAgent } from "./agents/supervisor-agent";
+import { askAgent } from "./agents/ask-agent";
+import { briefAgent } from "./agents/brief-agent";
+
+// Tools
+import { piiRedactorTool } from './tools/pii-redactor';
+import { enkryptCheckTool } from './tools/enkrypt-check-tool';
+import { qdrantSearchTool } from './tools/qdrant-search-tool';
+import { qdrantWriteTool } from './tools/qdrant-write-tool';
+import { dependencyResolverTool } from './tools/dependency-resolver-tool';
+
+// Scorers
+import { itemCountScorer, ownerAccuracyScorer, typeAccuracyScorer, sourceQuotePresenceScorer } from './scorers/extraction-scorer';
 
 
 export const mastra = new Mastra({
-  workflows: { weatherWorkflow },
-  agents: { weatherAgent,extractionAgent  },
+  workflows: {
+    riskMonitorWorkflow,
+    followupHitlWorkflow,
+    reminderWorkflow,
+    weeklyReportWorkflow,
+    strategicInsightWorkflow,
+  },
+  agents: {
+    extractionAgent,
+    followupAgent,
+    supervisorAgent,
+    askAgent,
+    briefAgent,
+  },
+  tools: {
+    piiRedactorTool,
+    enkryptCheckTool,
+    qdrantSearchTool,
+    qdrantWriteTool,
+    dependencyResolverTool,
+  },
   scorers: {
-    toolCallAppropriatenessScorer,
-    completenessScorer,
-    translationScorer,
     itemCountScorer,
     ownerAccuracyScorer,
     typeAccuracyScorer,
@@ -43,11 +77,11 @@ export const mastra = new Mastra({
       default: {
         serviceName: 'mastra',
         exporters: [
-          new MastraStorageExporter(), // Persists observability events to Mastra Storage
-          new MastraPlatformExporter(), // Sends observability events to Mastra Platform (if MASTRA_PLATFORM_ACCESS_TOKEN is set)
+          new MastraStorageExporter(),
+          new MastraPlatformExporter(),
         ],
         spanOutputProcessors: [
-          new SensitiveDataFilter(), // Redacts sensitive data like passwords, tokens, keys
+          new SensitiveDataFilter(),
         ],
       },
     },
