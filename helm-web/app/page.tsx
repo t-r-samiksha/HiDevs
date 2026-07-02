@@ -9,6 +9,7 @@ import AnswerCard from "./components/search/AnswerCard";
 import BriefingDigest from "./components/dashboard/BriefingDigest";
 import ApprovalQueueWidget from "./components/dashboard/ApprovalQueueWidget";
 import InsightCard, { type Insight } from "./components/dashboard/InsightCard";
+import DashboardCharts from "./components/dashboard/DashboardCharts";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -276,6 +277,9 @@ export default function Dashboard() {
         <MetricCard label="Blocked" value={blocked.length} color={blocked.length ? "red" : undefined} />
         <MetricCard label="Completed" value={done.length} color={done.length ? "green" : undefined} />
       </div>
+
+      {/* Charts */}
+      <DashboardCharts items={items} />
 
       {/* Approval widget + risk scan */}
       <div className="mb-6 grid grid-cols-1 gap-3 md:grid-cols-2">

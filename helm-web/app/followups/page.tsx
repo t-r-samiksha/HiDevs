@@ -35,6 +35,7 @@ export default function FollowupsPage() {
   }
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchEscalations();
   }, []);
 
@@ -53,25 +54,8 @@ export default function FollowupsPage() {
   const resolved = escalations.filter((e) => e.status !== "pending");
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
-      {/* Header */}
-      <header className="border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 px-6 py-4">
-        <div className="max-w-4xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <a href="/" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
-              <div className="w-9 h-9 rounded-lg bg-blue-100 dark:bg-blue-900 flex items-center justify-center">
-                <span className="text-blue-700 dark:text-blue-300 text-lg">⎈</span>
-              </div>
-              <h1 className="text-xl font-semibold text-gray-900 dark:text-white">Helm</h1>
-            </a>
-          </div>
-          <a href="/" className="text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
-            ← Back to dashboard
-          </a>
-        </div>
-      </header>
-
-      <main className="max-w-4xl mx-auto px-6 py-6">
+    <div className="min-h-full bg-gray-50 dark:bg-gray-950">
+      <main className="max-w-4xl mx-auto px-4 md:px-6 py-6">
         <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">Approval queue</h2>
         <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
           Follow-up messages drafted by the AI, waiting for your approval before sending.

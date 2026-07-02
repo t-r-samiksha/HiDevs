@@ -5,6 +5,8 @@ import { usePathname, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import Sidebar from "./Sidebar";
 import Topbar from "./Topbar";
+import MobileBottomNav from "./MobileBottomNav";
+import { labelForPath } from "./nav";
 
 /** Routes that render WITHOUT the app chrome (no sidebar/topbar). */
 const AUTH_ROUTES = ["/login", "/signup"];
@@ -53,6 +55,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     }
   }, [authChecked, authed, authRoute, router]);
 
+  // Keep the browser tab title in sync with the current page (Phase 6.4).
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    document.title = authRoute ? "Helm | Sign in" : `Helm | ${labelForPath(pathname)}`;
+  }, [pathname, authRoute]);
+
   // Auth pages: render bare.
   if (authRoute) {
     return <div className="min-h-screen bg-slate-950 text-slate-100">{children}</div>;
@@ -77,8 +85,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar onMenu={() => setSidebarOpen(true)} />
-        <main className="flex-1 overflow-y-auto">{children}</main>
+        {/* pb-16 on mobile keeps content clear of the bottom nav */}
+        <main className="flex-1 overflow-y-auto pb-16 md:pb-0">{children}</main>
       </div>
+      <MobileBottomNav onMore={() => setSidebarOpen(true)} />
     </div>
   );
 }
