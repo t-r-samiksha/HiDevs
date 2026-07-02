@@ -7,6 +7,8 @@ import { supabase } from "@/lib/supabase";
 import WorkspaceHeader from "../../components/workspace/WorkspaceHeader";
 import WorkspaceTabs from "../../components/workspace/WorkspaceTabs";
 import MemberList, { type Member } from "../../components/workspace/MemberList";
+import DocumentList from "../../components/workspace/DocumentList";
+import ProjectBriefView from "../../components/workspace/ProjectBriefView";
 
 type Project = { id: string; name: string; description: string | null };
 type Meeting = { id: string; title: string; date: string };
@@ -135,33 +137,10 @@ export default function WorkspacePage() {
         </div>
       )}
 
-      {tab === "documents" && (
-        <div className="rounded-xl border border-slate-800 bg-slate-900 p-6 text-center">
-          <p className="text-sm text-slate-500">No documents yet.</p>
-          <button
-            onClick={() => alert("Document upload arrives with Member 1's documents API.")}
-            className="mt-3 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-          >
-            Upload document
-          </button>
-        </div>
-      )}
+      {tab === "documents" && <DocumentList documents={[]} />}
 
       {tab === "brief" && (
-        <div className="rounded-xl border border-slate-800 bg-slate-900 p-5">
-          {brief ? (
-            <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-200">{brief}</p>
-          ) : (
-            <p className="text-sm text-slate-500">No brief generated yet.</p>
-          )}
-          <button
-            onClick={generateBrief}
-            disabled={briefLoading}
-            className="mt-4 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-          >
-            {briefLoading ? "Generating…" : "Generate brief"}
-          </button>
-        </div>
+        <ProjectBriefView brief={brief} loading={briefLoading} onGenerate={generateBrief} />
       )}
     </div>
   );

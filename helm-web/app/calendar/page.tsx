@@ -5,6 +5,8 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import type { CalendarEvent } from "../components/calendar/CalendarGrid";
+import ReminderBell from "../components/calendar/ReminderBell";
+import ReminderCreateModal from "../components/calendar/ReminderCreateModal";
 
 const CalendarGrid = dynamic(() => import("../components/calendar/CalendarGrid"), {
   ssr: false,
@@ -14,6 +16,9 @@ const CalendarGrid = dynamic(() => import("../components/calendar/CalendarGrid")
 export default function CalendarPage() {
   const [events, setEvents] = useState<CalendarEvent[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [reminderItems, setReminderItems] = useState<{ id: string; text: string }[]>([]);
+  const [showReminder, setShowReminder] = useState(false);
+  const [reminderRefresh, setReminderRefresh] = useState(0);
 
   async function load() {
     // Deadlines come from real item data. Rooms are best-effort (Member 1's
@@ -68,6 +73,7 @@ export default function CalendarPage() {
       /* rooms table not ready — deadlines only */
     }
 
+    setReminderItems((itemsRes.data ?? []).map((it: { id: string; text: string }) => ({ id: it.id, text: it.text })));
     setError(null);
     setEvents([...deadlineEvents, ...roomEvents]);
   }
@@ -86,13 +92,30 @@ export default function CalendarPage() {
             Item deadlines and scheduled meetings. Click an event to open it.
           </p>
         </div>
-        <Link
-          href="/rooms/new"
-          className="shrink-0 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-        >
-          + New room
-        </Link>
+        <div className="flex shrink-0 items-center gap-2">
+          <ReminderBell refreshKey={reminderRefresh} />
+          <button
+            onClick={() => setShowReminder(true)}
+            className="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-200 hover:bg-slate-800"
+          >
+            + Reminder
+          </button>
+          <Link
+            href="/rooms/new"
+            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+          >
+            + New room
+          </Link>
+        </div>
       </div>
+
+      {showReminder && (
+        <ReminderCreateModal
+          items={reminderItems}
+          onClose={() => setShowReminder(false)}
+          onCreated={() => setReminderRefresh((k) => k + 1)}
+        />
+      )}
 
       {/* Legend */}
       <div className="mb-4 flex flex-wrap gap-3 text-xs text-slate-400">

@@ -2,21 +2,11 @@
 
 import { useState } from "react";
 import { Search as SearchIcon } from "lucide-react";
-import TrustScoreBadge from "../components/TrustScoreBadge";
 import AnswerCard from "../components/search/AnswerCard";
+import AskBar, { type SearchMode as Mode } from "../components/search/AskBar";
+import SearchBar from "../components/search/SearchBar";
+import SemanticResultsList, { type SearchResult as Result } from "../components/search/SemanticResultsList";
 
-type Result = {
-  text: string;
-  type: string;
-  owner: string;
-  meeting_title: string;
-  source_quote: string;
-  supersedes_hint: string;
-  trust_score: number;
-  score: number;
-};
-
-type Mode = "search" | "ask";
 type TypeFilter = "all" | "decision" | "action_item";
 
 export default function SearchPage() {
@@ -68,39 +58,14 @@ export default function SearchPage() {
       </div>
 
       {/* Mode toggle */}
-      <div className="mb-3 inline-flex rounded-lg border border-slate-800 bg-slate-900 p-1">
-        {(["search", "ask"] as Mode[]).map((m) => (
-          <button
-            key={m}
-            onClick={() => setMode(m)}
-            className={`rounded-md px-4 py-1.5 text-sm font-medium capitalize transition-colors ${
-              mode === m ? "bg-blue-600 text-white" : "text-slate-400 hover:text-slate-200"
-            }`}
-          >
-            {m}
-          </button>
-        ))}
+      <div className="mb-3">
+        <AskBar mode={mode} onChange={setMode} />
       </div>
 
       {/* Search bar */}
-      <form onSubmit={run} className="mb-6 flex gap-2">
-        <div className="relative flex-1">
-          <SearchIcon className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder={mode === "ask" ? "Ask a question… e.g. 'Why did we switch databases?'" : "Search decisions and action items…"}
-            className="w-full rounded-xl border border-slate-700 bg-slate-900 py-3 pl-10 pr-4 text-sm text-white placeholder-slate-500 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-        </div>
-        <button
-          type="submit"
-          disabled={loading}
-          className="rounded-xl bg-blue-600 px-6 py-3 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-        >
-          {loading ? "…" : mode === "ask" ? "Ask" : "Search"}
-        </button>
-      </form>
+      <div className="mb-6">
+        <SearchBar query={query} onChange={setQuery} onSubmit={run} loading={loading} mode={mode} />
+      </div>
 
       <div className="grid grid-cols-1 gap-6 md:grid-cols-[200px_1fr]">
         {/* Filter sidebar */}
@@ -152,27 +117,7 @@ export default function SearchPage() {
             <p className="py-8 text-center text-sm text-slate-500">No matching results.</p>
           )}
 
-          <div className="space-y-3">
-            {filtered.map((r, i) => (
-              <div key={i} className="rounded-xl border border-slate-800 bg-slate-900 p-4">
-                <div className="mb-2 flex items-start justify-between gap-3">
-                  <p className="text-sm text-white">{r.text}</p>
-                  <span className="shrink-0 font-mono text-xs text-blue-400">{r.score}</span>
-                </div>
-                <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
-                  <span>{r.type === "decision" ? "📌 decision" : "📋 action item"}</span>
-                  {r.owner && r.owner !== "unassigned" && <span>👤 {r.owner}</span>}
-                  {r.meeting_title && <span>🎙️ {r.meeting_title}</span>}
-                  <TrustScoreBadge score={r.trust_score} />
-                </div>
-                {r.source_quote && (
-                  <p className="mt-2 border-l-2 border-slate-700 pl-2 text-xs italic text-slate-500">
-                    &quot;{r.source_quote}&quot;
-                  </p>
-                )}
-              </div>
-            ))}
-          </div>
+          <SemanticResultsList results={filtered} />
         </div>
       </div>
     </div>

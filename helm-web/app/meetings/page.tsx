@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { Mic } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import MeetingHistoryList from "../components/meetings/MeetingHistoryList";
 
 type Meeting = {
   id: string;
@@ -87,26 +87,7 @@ export default function MeetingsPage() {
 
       {meetings && meetings.length > 0 && (
         <>
-          <div className="space-y-3">
-            {paged.map((m) => (
-              <Link
-                key={m.id}
-                href={`/meetings/${m.id}`}
-                className="flex items-center justify-between gap-4 rounded-xl border border-slate-800 bg-slate-900 p-4 transition-colors hover:border-slate-600"
-              >
-                <div className="min-w-0">
-                  <p className="truncate font-medium text-white">{m.title}</p>
-                  <p className="mt-1 text-xs text-slate-400">{new Date(m.date).toLocaleDateString()}</p>
-                </div>
-                <div className="flex shrink-0 items-center gap-2">
-                  <SourceBadge source={m.source_type} />
-                  <span className="rounded-full bg-slate-800 px-2.5 py-0.5 text-xs text-slate-300">
-                    {counts.get(m.id) ?? 0} items
-                  </span>
-                </div>
-              </Link>
-            ))}
-          </div>
+          <MeetingHistoryList meetings={paged} counts={counts} />
 
           {pageCount > 1 && (
             <div className="mt-6 flex items-center justify-center gap-3">
@@ -135,17 +116,3 @@ export default function MeetingsPage() {
   );
 }
 
-function SourceBadge({ source }: { source: string | null }) {
-  const isLive = source === "live";
-  return (
-    <span
-      className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
-        isLive
-          ? "bg-purple-900 text-purple-200"
-          : "bg-slate-800 text-slate-300"
-      }`}
-    >
-      {isLive ? "🔴 live" : "⬆️ upload"}
-    </span>
-  );
-}

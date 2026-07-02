@@ -1,8 +1,9 @@
 "use client";
 
-import { Hash, User, Plus } from "lucide-react";
+import { Hash, Plus } from "lucide-react";
 import type { Channel } from "./mockData";
 import UnreadBadge from "./UnreadBadge";
+import DMList from "./DMList";
 
 /** Left panel: channels + DMs for the current user. */
 export default function ChannelList({
@@ -24,11 +25,7 @@ export default function ChannelList({
           <ChannelRow key={c.id} channel={c} active={c.id === selectedId} onSelect={onSelect} icon={<Hash size={15} />} />
         ))}
       </Group>
-      <Group title="Direct messages" onAdd={() => alert("New DM — coming with Member 1's chat tables.")}>
-        {dms.map((c) => (
-          <ChannelRow key={c.id} channel={c} active={c.id === selectedId} onSelect={onSelect} icon={<User size={15} />} />
-        ))}
-      </Group>
+      <DMList dms={dms} selectedId={selectedId} onSelect={onSelect} />
     </div>
   );
 }

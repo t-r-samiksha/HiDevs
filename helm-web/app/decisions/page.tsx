@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { Gavel } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import type { Item } from "../components/types";
-import TrustScoreBadge from "../components/TrustScoreBadge";
+import DecisionCard from "../components/decisions/DecisionCard";
+import ContradictionAlert from "../components/decisions/ContradictionAlert";
 
 type Contradiction = {
   id: string;
@@ -65,20 +65,12 @@ export default function DecisionsPage() {
       {contradictions.length > 0 && (
         <div className="mb-6 space-y-2">
           {contradictions.map((c) => (
-            <div key={c.id} className="rounded-xl border border-amber-800 bg-amber-950 px-4 py-3">
-              <p className="text-sm font-medium text-amber-200">⚠️ Contradiction</p>
-              <p className="mt-1 text-sm text-amber-300">
-                {c.description ?? c.explanation ?? "Two decisions conflict."}
-              </p>
-              <div className="mt-2 flex gap-3 text-xs">
-                <Link href={`/items/${c.item_a_id}`} className="text-blue-400 hover:underline">
-                  View decision A →
-                </Link>
-                <Link href={`/items/${c.item_b_id}`} className="text-blue-400 hover:underline">
-                  View decision B →
-                </Link>
-              </div>
-            </div>
+            <ContradictionAlert
+              key={c.id}
+              description={c.description ?? c.explanation ?? "Two decisions conflict."}
+              itemAId={c.item_a_id}
+              itemBId={c.item_b_id}
+            />
           ))}
         </div>
       )}
@@ -118,32 +110,13 @@ export default function DecisionsPage() {
             const meeting = meetings.get(d.meeting_id);
             const overrides = d.supersedes_id ? byId.get(d.supersedes_id) : null;
             return (
-              <Link
+              <DecisionCard
                 key={d.id}
-                href={`/items/${d.id}`}
-                className="block rounded-xl border border-slate-800 bg-slate-900 p-4 transition-colors hover:border-slate-600"
-              >
-                <div className="mb-2 flex items-start justify-between gap-3">
-                  <p className="text-sm leading-relaxed text-white">{d.text}</p>
-                  <TrustScoreBadge score={d.trust_score} />
-                </div>
-
-                {/* Supersede chain */}
-                {(overrides || d.supersedes_hint) && (
-                  <div className="mb-2 flex items-center gap-2 rounded-lg bg-slate-800/60 px-3 py-1.5 text-xs">
-                    <span className="font-medium text-amber-400">overrides</span>
-                    <span className="text-slate-500">→</span>
-                    <span className="truncate text-slate-300">
-                      {overrides ? overrides.text : d.supersedes_hint}
-                    </span>
-                  </div>
-                )}
-
-                <div className="flex flex-wrap items-center gap-3 text-xs text-slate-400">
-                  {meeting && <span>🎙️ {meeting.title}</span>}
-                  {meeting && <span>{new Date(meeting.date).toLocaleDateString()}</span>}
-                </div>
-              </Link>
+                decision={d}
+                meetingTitle={meeting?.title}
+                meetingDate={meeting?.date}
+                overridesText={overrides ? overrides.text : d.supersedes_hint}
+              />
             );
           })}
         </div>

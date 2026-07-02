@@ -6,6 +6,7 @@ import { Calendar, dateFnsLocalizer, Views, type View } from "react-big-calendar
 import { format, parse, startOfWeek, getDay } from "date-fns";
 import { enUS } from "date-fns/locale";
 import "react-big-calendar/lib/css/react-big-calendar.css";
+import CalendarEventChip from "./CalendarEventChip";
 
 export type CalendarEvent = {
   id: string;
@@ -64,6 +65,7 @@ export default function CalendarGrid({ events }: { events: CalendarEvent[] }) {
         startAccessor="start"
         endAccessor="end"
         popup
+        components={{ event: CalendarEventChip }}
         eventPropGetter={eventStyle}
         onSelectEvent={(e) => router.push((e as CalendarEvent).href)}
         style={{ height: "100%" }}

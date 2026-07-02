@@ -3,6 +3,9 @@
 import { useState } from "react";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
+import ThresholdControl from "../../components/settings/ThresholdControl";
+import PromptEditor from "../../components/settings/PromptEditor";
+import LearningDashboard from "../../components/settings/LearningDashboard";
 
 // Mock adaptive-intelligence UI. TODO: wire to Member 1's adaptive learning
 // APIs (audit_logs, adaptive_thresholds, versioned prompts).
@@ -37,8 +40,8 @@ export default function IntelligencePage() {
       {/* Thresholds */}
       <section className="mb-6 rounded-2xl border border-slate-800 bg-slate-900 p-5">
         <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-400">Thresholds</h2>
-        <Slider label="At-risk window (days before deadline)" value={atRiskDays} min={1} max={14} onChange={setAtRiskDays} />
-        <Slider label="Silence window (days without activity)" value={silenceDays} min={1} max={21} onChange={setSilenceDays} />
+        <ThresholdControl label="At-risk window (days before deadline)" value={atRiskDays} min={1} max={14} onChange={setAtRiskDays} />
+        <ThresholdControl label="Silence window (days without activity)" value={silenceDays} min={1} max={21} onChange={setSilenceDays} />
         <div className="mt-4">
           <p className="mb-2 text-xs font-medium text-slate-400">Adaptation speed</p>
           <div className="inline-flex rounded-lg border border-slate-800 bg-slate-950 p-1">
@@ -58,67 +61,10 @@ export default function IntelligencePage() {
       </section>
 
       {/* Prompt editor */}
-      <section className="mb-6 rounded-2xl border border-slate-800 bg-slate-900 p-5">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-400">Extraction prompt</h2>
-          <button onClick={() => setPrompt(DEFAULT_PROMPT)} className="text-xs text-blue-400 hover:underline">
-            Restore default
-          </button>
-        </div>
-        <textarea
-          value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
-          rows={5}
-          className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-xs text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-        />
-      </section>
+      <PromptEditor value={prompt} onChange={setPrompt} onRestore={() => setPrompt(DEFAULT_PROMPT)} />
 
       {/* Audit log */}
-      <section className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
-        <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-400">Recent adaptive changes</h2>
-        <div className="space-y-3">
-          {MOCK_AUDIT.map((a) => (
-            <div key={a.id} className="flex items-start gap-3 border-b border-slate-800 pb-3 last:border-0 last:pb-0">
-              <span className="mt-0.5 rounded bg-slate-800 px-2 py-0.5 text-[10px] uppercase text-slate-400">{a.type}</span>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm text-slate-200">{a.change}</p>
-                <p className="text-xs text-slate-500">{a.why} · {a.when}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
-    </div>
-  );
-}
-
-function Slider({
-  label,
-  value,
-  min,
-  max,
-  onChange,
-}: {
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  onChange: (v: number) => void;
-}) {
-  return (
-    <div className="mb-4">
-      <div className="mb-1 flex items-center justify-between text-xs">
-        <span className="text-slate-400">{label}</span>
-        <span className="font-medium text-slate-200">{value}</span>
-      </div>
-      <input
-        type="range"
-        min={min}
-        max={max}
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-        className="w-full accent-blue-600"
-      />
+      <LearningDashboard entries={MOCK_AUDIT} />
     </div>
   );
 }
