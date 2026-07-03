@@ -10,6 +10,7 @@ import BriefingDigest from "./components/dashboard/BriefingDigest";
 import ApprovalQueueWidget from "./components/dashboard/ApprovalQueueWidget";
 import InsightCard, { type Insight } from "./components/dashboard/InsightCard";
 import DashboardCharts from "./components/dashboard/DashboardCharts";
+import { PROJECT_ID } from "./lib/project";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -71,13 +72,24 @@ export default function Dashboard() {
     setSearchDone(false);
     setSearchAnswer(null);
     try {
-      const res = await fetch("/api/search", {
+      const res = await fetch("/api/ask", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: searchQuery }),
+        body: JSON.stringify({ question: searchQuery, project_id: PROJECT_ID }),
       });
       const data = await res.json();
-      setSearchResults(data.results || []);
+      setSearchResults(
+        (data.results || []).map((r: Partial<SearchResult>) => ({
+          text: r.text ?? "",
+          type: r.type ?? "",
+          owner: r.owner ?? "unassigned",
+          meeting_title: r.meeting_title ?? "",
+          source_quote: r.source_quote ?? "",
+          supersedes_hint: "",
+          trust_score: r.trust_score ?? 0,
+          score: r.trust_score ?? 0,
+        }))
+      );
       setSearchAnswer(typeof data.answer === "string" ? data.answer : null);
       setSearchDone(true);
     } catch (err) {
@@ -144,16 +156,28 @@ export default function Dashboard() {
     setContradictions(contradictionsRes.data || []);
     setPendingFollowups(followupRes.count ?? 0);
 
-    // Strategic signals — from Member 1's insights API when available.
-    // TODO: replace fallback once /api/dashboard/insights ships.
+    // Strategic signals from Member 1's insights API.
     try {
-      const res = await fetch("/api/dashboard/insights");
+      const res = await fetch(`/api/dashboard/insights?project_id=${PROJECT_ID}`);
       if (res.ok) {
         const data = await res.json();
-        setInsights(data.insights ?? data.signals ?? []);
+        const hrefFor: Record<string, string> = {
+          decision_velocity: "/meetings",
+          recurring_blocker: "/items",
+          commitment_drift: "/items",
+          meeting_roi: "/reports",
+        };
+        setInsights(
+          (data.signals ?? []).map((s: { type: string; title: string; description: string; action_label?: string }, i: number) => ({
+            id: s.type ?? String(i),
+            text: `${s.title} — ${s.description}`,
+            actionLabel: s.action_label,
+            actionHref: hrefFor[s.type] ?? "/items",
+          }))
+        );
       }
     } catch {
-      /* no insights endpoint yet */
+      /* insights unavailable */
     }
     setLoading(false);
   }

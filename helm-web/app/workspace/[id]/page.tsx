@@ -7,7 +7,7 @@ import { supabase } from "@/lib/supabase";
 import WorkspaceHeader from "../../components/workspace/WorkspaceHeader";
 import WorkspaceTabs from "../../components/workspace/WorkspaceTabs";
 import MemberList, { type Member } from "../../components/workspace/MemberList";
-import DocumentList from "../../components/workspace/DocumentList";
+import DocumentList, { type Document } from "../../components/workspace/DocumentList";
 import ProjectBriefView from "../../components/workspace/ProjectBriefView";
 
 type Project = { id: string; name: string; description: string | null };
@@ -25,6 +25,7 @@ export default function WorkspacePage() {
   const [members, setMembers] = useState<Member[]>([]);
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [activity, setActivity] = useState<Activity[]>([]);
+  const [documents, setDocuments] = useState<Document[]>([]);
   const [brief, setBrief] = useState<string | null>(null);
   const [briefLoading, setBriefLoading] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -47,6 +48,20 @@ export default function WorkspacePage() {
     setMembers((usersRes.data as Member[]) ?? []);
     setMeetings((meetRes.data as Meeting[]) ?? []);
     setActivity((itemsRes.data as Activity[]) ?? []);
+
+    // Cached brief + documents from Member 1's project APIs.
+    try {
+      const [briefRes, docsRes] = await Promise.all([
+        fetch(`/api/projects/${projectId}/brief`),
+        fetch(`/api/projects/${projectId}/documents`),
+      ]);
+      const briefData = await briefRes.json();
+      if (typeof briefData.brief === "string") setBrief(briefData.brief);
+      const docsData = await docsRes.json();
+      setDocuments(docsData.documents ?? []);
+    } catch {
+      /* ignore */
+    }
     setLoading(false);
   }
 
@@ -137,7 +152,7 @@ export default function WorkspacePage() {
         </div>
       )}
 
-      {tab === "documents" && <DocumentList documents={[]} />}
+      {tab === "documents" && <DocumentList documents={documents} />}
 
       {tab === "brief" && (
         <ProjectBriefView brief={brief} loading={briefLoading} onGenerate={generateBrief} />

@@ -1,20 +1,36 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import ThresholdControl from "../../components/settings/ThresholdControl";
 import PromptEditor from "../../components/settings/PromptEditor";
 import LearningDashboard from "../../components/settings/LearningDashboard";
+import type { AuditEntry } from "../../components/settings/AuditLogTable";
 
-// Mock adaptive-intelligence UI. TODO: wire to Member 1's adaptive learning
-// APIs (audit_logs, adaptive_thresholds, versioned prompts).
+type ApiChange = {
+  id: string;
+  entity: string;
+  old_value: unknown;
+  new_value: unknown;
+  driving_signal: string | null;
+  triggered_by: string | null;
+  created_at: string;
+};
 
-const MOCK_AUDIT = [
-  { id: "a1", when: "2h ago", type: "threshold", change: "at_risk_days 3 → 2 for Rahul", why: "closed 4 tasks early" },
-  { id: "a2", when: "1d ago", type: "prompt", change: "extraction prompt v3 → v4", why: "improved owner accuracy" },
-  { id: "a3", when: "3d ago", type: "threshold", change: "silence_days 5 → 7 (team-wide)", why: "reduced false at-risk flags" },
-];
+function relTime(iso: string) {
+  const diff = Date.now() - new Date(iso).getTime();
+  const h = Math.floor(diff / 3.6e6);
+  if (h < 1) return "just now";
+  if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
+}
+
+function summarize(v: unknown): string {
+  if (v == null) return "—";
+  if (typeof v === "object") return JSON.stringify(v);
+  return String(v);
+}
 
 const DEFAULT_PROMPT = "You read a meeting transcript and extract every DECISION and ACTION ITEM…";
 
@@ -23,6 +39,27 @@ export default function IntelligencePage() {
   const [silenceDays, setSilenceDays] = useState(5);
   const [speed, setSpeed] = useState<"conservative" | "balanced" | "aggressive">("balanced");
   const [prompt, setPrompt] = useState(DEFAULT_PROMPT);
+  const [audit, setAudit] = useState<AuditEntry[]>([]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/admin/learning?limit=20");
+        const data = await res.json();
+        setAudit(
+          (data.changes ?? []).map((c: ApiChange) => ({
+            id: c.id,
+            when: relTime(c.created_at),
+            type: c.entity ?? "change",
+            change: `${summarize(c.old_value)} → ${summarize(c.new_value)}`,
+            why: c.driving_signal ?? c.triggered_by ?? "adaptive update",
+          }))
+        );
+      } catch {
+        /* ignore */
+      }
+    })();
+  }, []);
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-6 md:px-6">
@@ -64,7 +101,7 @@ export default function IntelligencePage() {
       <PromptEditor value={prompt} onChange={setPrompt} onRestore={() => setPrompt(DEFAULT_PROMPT)} />
 
       {/* Audit log */}
-      <LearningDashboard entries={MOCK_AUDIT} />
+      <LearningDashboard entries={audit} />
     </div>
   );
 }

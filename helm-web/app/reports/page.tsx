@@ -3,67 +3,65 @@
 import { useEffect, useState } from "react";
 import { FileBarChart } from "lucide-react";
 import WeeklyReportCard, { type WeeklyReport } from "../components/reports/WeeklyReportCard";
+import { PROJECT_ID } from "../lib/project";
 
-// Mock reports until Member 1 ships GET /api/reports/weekly.
-// TODO: Replace MOCK_REPORTS with the real fetch below.
-const MOCK_REPORTS: WeeklyReport[] = [
-  {
-    id: "r1",
-    week_start: new Date(Date.now() - 7 * 864e5).toISOString(),
-    week_end: new Date().toISOString(),
-    meetings_count: 3,
-    tasks_completed: 8,
-    tasks_pending: 5,
-    major_decisions: ["Switch primary datastore to PostgreSQL", "Freeze scope for the demo build"],
-    meeting_roi_scores: [
-      { title: "Kickoff", itemCount: 6 },
-      { title: "Standup", itemCount: 2 },
-      { title: "Demo prep", itemCount: 0 },
-    ],
-    signals: ["2 action items have slipped their deadline twice — consider reassigning."],
-  },
-  {
-    id: "r2",
-    week_start: new Date(Date.now() - 14 * 864e5).toISOString(),
-    week_end: new Date(Date.now() - 7 * 864e5).toISOString(),
-    meetings_count: 2,
-    tasks_completed: 5,
-    tasks_pending: 3,
-    major_decisions: ["Adopt Enkrypt for trust scoring"],
-    meeting_roi_scores: [
-      { title: "Planning", itemCount: 4 },
-      { title: "Sync", itemCount: 1 },
-    ],
-    signals: [],
-  },
-];
+// Map a raw `reports` row to the card's shape.
+function mapReport(r: {
+  id: string;
+  week_start: string;
+  week_end: string;
+  meetings_count?: number;
+  tasks_completed?: number;
+  tasks_pending?: number;
+  major_decisions?: unknown[];
+  meeting_roi_scores?: { meeting_title?: string; title?: string; items_produced?: number; itemCount?: number }[];
+}): WeeklyReport {
+  return {
+    id: r.id,
+    week_start: r.week_start,
+    week_end: r.week_end,
+    meetings_count: r.meetings_count ?? 0,
+    tasks_completed: r.tasks_completed ?? 0,
+    tasks_pending: r.tasks_pending ?? 0,
+    major_decisions: (r.major_decisions ?? []).map((d) =>
+      typeof d === "string" ? d : ((d as { text?: string })?.text ?? String(d))
+    ),
+    meeting_roi_scores: (r.meeting_roi_scores ?? []).map((m) => ({
+      title: m.meeting_title ?? m.title ?? "Meeting",
+      itemCount: m.items_produced ?? m.itemCount ?? 0,
+    })),
+  };
+}
 
 export default function ReportsPage() {
   const [reports, setReports] = useState<WeeklyReport[] | null>(null);
-  const [usingMock, setUsingMock] = useState(false);
   const [generating, setGenerating] = useState(false);
 
   async function load() {
     try {
-      const res = await fetch("/api/reports/weekly");
-      if (!res.ok) throw new Error("not ready");
+      const res = await fetch(`/api/reports/weekly?project_id=${PROJECT_ID}`);
       const data = await res.json();
-      setReports(data.reports ?? []);
-      setUsingMock(false);
+      setReports(data.report ? [mapReport(data.report)] : []);
     } catch {
-      setReports(MOCK_REPORTS);
-      setUsingMock(true);
+      setReports([]);
     }
   }
 
   async function generate() {
     setGenerating(true);
     try {
-      const res = await fetch("/api/reports/weekly/generate", { method: "POST" });
+      const res = await fetch("/api/reports/weekly/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ project_id: PROJECT_ID }),
+      });
       if (res.ok) await load();
-      else alert("Report generation isn't available yet (pending Member 1's reports API).");
-    } catch {
-      alert("Report generation isn't available yet (pending Member 1's reports API).");
+      else {
+        const d = await res.json().catch(() => ({}));
+        alert("Report generation failed: " + (d.error || res.statusText));
+      }
+    } catch (e) {
+      alert("Report generation failed: " + (e instanceof Error ? e.message : "unknown"));
     } finally {
       setGenerating(false);
     }
@@ -91,12 +89,6 @@ export default function ReportsPage() {
           {generating ? "Generating…" : "Generate report"}
         </button>
       </div>
-
-      {usingMock && (
-        <div className="mb-4 rounded-lg border border-amber-800 bg-amber-950/60 px-3 py-2 text-xs text-amber-300">
-          Showing sample data — live reports arrive with Member 1&apos;s reports API.
-        </div>
-      )}
 
       {reports === null && <div className="h-64 animate-pulse rounded-2xl bg-slate-900" />}
 

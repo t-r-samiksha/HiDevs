@@ -6,6 +6,7 @@ import AnswerCard from "../components/search/AnswerCard";
 import AskBar, { type SearchMode as Mode } from "../components/search/AskBar";
 import SearchBar from "../components/search/SearchBar";
 import SemanticResultsList, { type SearchResult as Result } from "../components/search/SemanticResultsList";
+import { PROJECT_ID } from "../lib/project";
 
 type TypeFilter = "all" | "decision" | "action_item";
 
@@ -26,17 +27,38 @@ export default function SearchPage() {
     setError(null);
     setAnswer(null);
     try {
-      const res = await fetch("/api/search", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query, mode }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Search failed");
-      setResults(data.results || []);
-      // The ask agent (Member 1) will eventually return `answer`. Until then
-      // Ask mode just shows semantic results with a heads-up banner.
-      setAnswer(typeof data.answer === "string" ? data.answer : null);
+      if (mode === "ask") {
+        // AI answer with citations (Member 1's ask agent).
+        const res = await fetch("/api/ask", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ question: query, project_id: PROJECT_ID }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Ask failed");
+        setAnswer(typeof data.answer === "string" ? data.answer : null);
+        setResults(
+          (data.results || []).map((r: Partial<Result>) => ({
+            text: r.text ?? "",
+            type: r.type ?? "",
+            owner: r.owner ?? "",
+            meeting_title: r.meeting_title ?? "",
+            source_quote: r.source_quote ?? "",
+            supersedes_hint: "",
+            trust_score: r.trust_score ?? 0,
+            score: r.trust_score ?? 0,
+          }))
+        );
+      } else {
+        const res = await fetch("/api/search", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Search failed");
+        setResults(data.results || []);
+      }
       setRan(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Search failed");

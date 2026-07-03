@@ -1,7 +1,7 @@
 "use client";
 
 import { Hash, Plus } from "lucide-react";
-import type { Channel } from "./mockData";
+import type { Channel } from "./types";
 import UnreadBadge from "./UnreadBadge";
 import DMList from "./DMList";
 

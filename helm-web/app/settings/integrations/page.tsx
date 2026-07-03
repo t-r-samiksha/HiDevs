@@ -1,26 +1,53 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
-import IntegrationHealthRow, { type Tool } from "../../components/settings/IntegrationHealthRow";
+import { ArrowLeft, Plug } from "lucide-react";
+import IntegrationHealthRow, { type Tool, type Health } from "../../components/settings/IntegrationHealthRow";
+import { WORKSPACE_ID } from "../../lib/project";
 
-// Mock integrations UI. TODO: wire to Member 1's integration_configs APIs.
+type ApiIntegration = { id: string; tool: string; health_status: string | null; last_sync_at: string | null };
+
+function mapHealth(s: string | null): Health {
+  const v = (s ?? "").toLowerCase();
+  if (["green", "healthy", "ok", "active", "connected"].includes(v)) return "green";
+  if (["amber", "yellow", "degraded", "warning", "syncing"].includes(v)) return "amber";
+  return "red";
+}
+
+function titleCase(s: string) {
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : "Tool";
+}
+
 export default function IntegrationsPage() {
-  const [tools, setTools] = useState<Tool[]>([
-    { id: "jira", name: "Jira", connected: true, health: "green", lastSync: "2 min ago" },
-    { id: "asana", name: "Asana", connected: false, health: "red", lastSync: null },
-    { id: "slack", name: "Slack", connected: true, health: "amber", lastSync: "1 hr ago" },
-  ]);
+  const [tools, setTools] = useState<Tool[] | null>(null);
 
-  function toggle(id: string) {
-    setTools((prev) =>
-      prev.map((t) =>
-        t.id === id
-          ? { ...t, connected: !t.connected, health: !t.connected ? "green" : "red", lastSync: !t.connected ? "just now" : null }
-          : t
-      )
-    );
+  async function load() {
+    try {
+      const res = await fetch(`/api/integrations?workspace_id=${WORKSPACE_ID}`);
+      const data = await res.json();
+      setTools(
+        (data.integrations ?? []).map((i: ApiIntegration) => ({
+          id: i.id,
+          name: titleCase(i.tool),
+          health: mapHealth(i.health_status),
+          lastSync: i.last_sync_at ? new Date(i.last_sync_at).toLocaleString() : null,
+        }))
+      );
+    } catch {
+      setTools([]);
+    }
+  }
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    load();
+  }, []);
+
+  async function disconnect(id: string) {
+    if (!confirm("Disconnect this integration?")) return;
+    await fetch(`/api/integrations/${id}`, { method: "DELETE" });
+    setTools((prev) => (prev ?? []).filter((t) => t.id !== id));
   }
 
   return (
@@ -30,17 +57,28 @@ export default function IntegrationsPage() {
       </Link>
       <h1 className="mb-1 text-xl font-semibold text-white">Integrations</h1>
       <p className="mb-6 text-sm text-slate-400">
-        Connect external trackers and map Helm item types to their types.
+        Connected trackers and their Helm type mappings.
       </p>
-      <div className="mb-4 rounded-lg border border-amber-800 bg-amber-950/60 px-3 py-2 text-xs text-amber-300">
-        Sample UI — live sync arrives with Member 1&apos;s integration APIs.
-      </div>
 
-      <div className="space-y-4">
-        {tools.map((tool) => (
-          <IntegrationHealthRow key={tool.id} tool={tool} onToggle={toggle} />
-        ))}
-      </div>
+      {tools === null && <div className="h-24 animate-pulse rounded-2xl bg-slate-900" />}
+
+      {tools && tools.length === 0 && (
+        <div className="rounded-xl border border-slate-800 bg-slate-900 py-16 text-center">
+          <Plug className="mx-auto mb-3 text-slate-600" size={40} />
+          <p className="font-medium text-slate-300">No integrations connected</p>
+          <p className="mt-1 text-sm text-slate-500">
+            Connect Jira, Asana, or Slack from your workspace to sync items automatically.
+          </p>
+        </div>
+      )}
+
+      {tools && tools.length > 0 && (
+        <div className="space-y-4">
+          {tools.map((tool) => (
+            <IntegrationHealthRow key={tool.id} tool={tool} onDisconnect={disconnect} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

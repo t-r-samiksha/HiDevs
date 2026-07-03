@@ -2,12 +2,10 @@
 
 import { useState } from "react";
 import { X } from "lucide-react";
-import { supabase } from "@/lib/supabase";
 
 /**
- * Create a manual reminder. Writes to the `reminders` table
- * (id, item_id, user_id, remind_at, message, sent). The table is owned by
- * Member 1 — if it doesn't exist yet the insert fails gracefully with a note.
+ * Create a manual reminder via POST /api/reminders. A reminder must be linked
+ * to an item (the API inner-joins items), so item selection is required.
  */
 export default function ReminderCreateModal({
   items = [],
@@ -25,24 +23,31 @@ export default function ReminderCreateModal({
   const [error, setError] = useState<string | null>(null);
 
   async function save() {
-    if (!message.trim() || !remindAt) return;
+    if (!message.trim() || !remindAt || !itemId) return;
     setSaving(true);
     setError(null);
-    const { data: auth } = await supabase.auth.getUser();
-    const { error } = await supabase.from("reminders").insert({
-      user_id: auth.user?.id ?? null,
-      item_id: itemId || null,
-      remind_at: new Date(remindAt).toISOString(),
-      message: message.trim(),
-      sent: false,
-    });
-    setSaving(false);
-    if (error) {
-      setError(`Could not save reminder: ${error.message}`);
-      return;
+    try {
+      const res = await fetch("/api/reminders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          item_id: itemId,
+          remind_at: new Date(remindAt).toISOString(),
+          message: message.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "Could not save reminder");
+        return;
+      }
+      onCreated?.();
+      onClose();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not save reminder");
+    } finally {
+      setSaving(false);
     }
-    onCreated?.();
-    onClose();
   }
 
   return (
@@ -78,23 +83,25 @@ export default function ReminderCreateModal({
               className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
-          {items.length > 0 && (
-            <div>
-              <label className="mb-1 block text-xs font-medium text-slate-400">Link to item (optional)</label>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-400">Item (required)</label>
+            {items.length === 0 ? (
+              <p className="text-xs text-slate-500">No items available to attach a reminder to yet.</p>
+            ) : (
               <select
                 value={itemId}
                 onChange={(e) => setItemId(e.target.value)}
                 className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
-                <option value="">None</option>
+                <option value="">Select an item…</option>
                 {items.map((it) => (
                   <option key={it.id} value={it.id}>
                     {it.text.length > 50 ? it.text.slice(0, 50) + "…" : it.text}
                   </option>
                 ))}
               </select>
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
         <div className="mt-5 flex justify-end gap-2">
@@ -103,7 +110,7 @@ export default function ReminderCreateModal({
           </button>
           <button
             onClick={save}
-            disabled={saving || !message.trim() || !remindAt}
+            disabled={saving || !message.trim() || !remindAt || !itemId}
             className="rounded-lg bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
           >
             {saving ? "Saving…" : "Create reminder"}

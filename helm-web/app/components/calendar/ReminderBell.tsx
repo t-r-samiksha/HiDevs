@@ -2,9 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Bell } from "lucide-react";
-import { supabase } from "@/lib/supabase";
+import { PROJECT_ID } from "../../lib/project";
 
-type Reminder = { id: string; message: string; remind_at: string };
+type Reminder = { id: string; message: string; remind_at: string; sent?: boolean };
 
 /**
  * Shows the count of upcoming (unsent, future) reminders for the current user
@@ -20,16 +20,16 @@ export default function ReminderBell({ refreshKey = 0 }: { refreshKey?: number }
     let active = true;
     async function load() {
       try {
-        const { data, error } = await supabase
-          .from("reminders")
-          .select("id, message, remind_at")
-          .eq("sent", false)
-          .gte("remind_at", new Date().toISOString())
-          .order("remind_at", { ascending: true });
-        if (!active || error) return;
-        setReminders((data as Reminder[]) ?? []);
+        const res = await fetch(`/api/reminders?project_id=${PROJECT_ID}`);
+        const data = await res.json();
+        if (!active) return;
+        const now = Date.now();
+        const upcoming = ((data.reminders as Reminder[]) ?? []).filter(
+          (r) => !r.sent && new Date(r.remind_at).getTime() >= now
+        );
+        setReminders(upcoming);
       } catch {
-        /* table not ready */
+        /* ignore */
       }
     }
     load();

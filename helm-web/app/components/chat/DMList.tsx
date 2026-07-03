@@ -1,7 +1,7 @@
 "use client";
 
 import { User, Plus } from "lucide-react";
-import type { Channel } from "./mockData";
+import type { Channel } from "./types";
 import UnreadBadge from "./UnreadBadge";
 
 /** Direct-message conversations for the current user. */
