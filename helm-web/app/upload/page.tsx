@@ -24,11 +24,13 @@ export default function UploadPage() {
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [transcribeStep, setTranscribeStep] = useState<TranscribeStep>("idle");
   const [transcribeError, setTranscribeError] = useState("");
+  const [dragging, setDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const startTimeRef = useRef<number>(0);
   const [elapsed, setElapsed] = useState(0);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!processing) { setElapsed(0); return; }
     startTimeRef.current = Date.now();
     const id = setInterval(() => {
@@ -49,11 +51,9 @@ export default function UploadPage() {
   }
 
   // ── Audio file selection ─────────────────────────────────────────────────
-  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const f = e.target.files?.[0] ?? null;
+  function acceptFile(f: File | null) {
     setTranscribeError("");
     setTranscribeStep("idle");
-
     if (!f) {
       setAudioFile(null);
       return;
@@ -65,6 +65,17 @@ export default function UploadPage() {
       return;
     }
     setAudioFile(f);
+  }
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    acceptFile(e.target.files?.[0] ?? null);
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setDragging(false);
+    if (transcribeStep === "uploading" || transcribeStep === "transcribing") return;
+    acceptFile(e.dataTransfer.files?.[0] ?? null);
   }
 
   // ── Transcription ────────────────────────────────────────────────────────
@@ -90,8 +101,8 @@ export default function UploadPage() {
       setTranscript(data.transcript || "");
       setTranscribeStep("done");
       setMode("text"); // show the transcript in the textarea
-    } catch (err: any) {
-      setTranscribeError(err.message || "Transcription failed");
+    } catch (err) {
+      setTranscribeError(err instanceof Error ? err.message : "Transcription failed");
       setTranscribeStep("idle");
     }
   }
@@ -124,8 +135,8 @@ export default function UploadPage() {
       setStatus((prev) => [...prev, `Done! ${data.items_count} items extracted.`]);
       setProcessing(false);
       setTimeout(() => router.push("/"), 2000);
-    } catch (err: any) {
-      setError(err.message || "Something went wrong");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong");
       setProcessing(false);
     }
   }
@@ -134,26 +145,8 @@ export default function UploadPage() {
   const transcribeDone = transcribeStep === "done";
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
-      {/* Header */}
-      <header className="border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 px-6 py-4">
-        <div className="max-w-3xl mx-auto flex items-center justify-between">
-          <a href="/" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
-            <div className="w-9 h-9 rounded-lg bg-blue-100 dark:bg-blue-900 flex items-center justify-center">
-              <span className="text-blue-700 dark:text-blue-300 text-lg">⎈</span>
-            </div>
-            <h1 className="text-xl font-semibold text-gray-900 dark:text-white">Helm</h1>
-          </a>
-          <a
-            href="/"
-            className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
-          >
-            ← Back to dashboard
-          </a>
-        </div>
-      </header>
-
-      <main className="max-w-3xl mx-auto px-6 py-8">
+    <div className="min-h-full bg-gray-50 dark:bg-gray-950">
+      <main className="max-w-3xl mx-auto px-4 md:px-6 py-6">
         <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">
           Upload meeting
         </h2>
@@ -221,8 +214,13 @@ export default function UploadPage() {
               {/* Drop zone */}
               <div
                 onClick={() => !transcribeBusy && fileInputRef.current?.click()}
+                onDragOver={(e) => { e.preventDefault(); if (!transcribeBusy) setDragging(true); }}
+                onDragLeave={() => setDragging(false)}
+                onDrop={handleDrop}
                 className={`relative flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed py-8 cursor-pointer transition-colors ${
-                  audioFile
+                  dragging
+                    ? "border-blue-400 bg-blue-100 dark:border-blue-500 dark:bg-blue-900"
+                    : audioFile
                     ? "border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-950"
                     : "border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 hover:border-blue-300 dark:hover:border-blue-700"
                 } ${transcribeBusy ? "pointer-events-none opacity-60" : ""}`}
@@ -261,7 +259,7 @@ export default function UploadPage() {
                   <>
                     <span className="text-2xl">⬆️</span>
                     <p className="text-sm text-gray-500 dark:text-gray-400">
-                      Click to choose an audio file
+                      {dragging ? "Drop the audio file" : "Drag an audio file here, or click to choose"}
                     </p>
                   </>
                 )}

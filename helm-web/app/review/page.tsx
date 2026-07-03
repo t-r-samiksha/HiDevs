@@ -113,25 +113,7 @@ export default function ReviewPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
-      {/* ── Header ── */}
-      <header className="border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 px-6 py-4">
-        <div className="max-w-4xl mx-auto flex items-center justify-between">
-          <a href="/" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
-            <div className="w-9 h-9 rounded-lg bg-blue-100 dark:bg-blue-900 flex items-center justify-center">
-              <span className="text-blue-700 dark:text-blue-300 text-lg">⎈</span>
-            </div>
-            <h1 className="text-xl font-semibold text-gray-900 dark:text-white">Helm</h1>
-          </a>
-          <a
-            href="/"
-            className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
-          >
-            ← Back to dashboard
-          </a>
-        </div>
-      </header>
-
+    <div className="min-h-full bg-gray-50 dark:bg-gray-950">
       {/* ── Toast ── */}
       {toast && (
         <div
@@ -163,7 +145,7 @@ export default function ReviewPage() {
             <p className="text-3xl mb-3">🛡️</p>
             <p className="text-gray-500 dark:text-gray-400 font-medium">Review queue is empty</p>
             <p className="text-sm text-gray-400 dark:text-gray-600 mt-1">
-              All extracted items passed Enkrypt's trust threshold.
+              All extracted items passed Enkrypt&apos;s trust threshold.
             </p>
           </div>
         )}
@@ -178,7 +160,7 @@ export default function ReviewPage() {
                   Quarantined — {quarantined.length} item{quarantined.length !== 1 ? "s" : ""}
                 </h3>
                 <p className="text-xs text-red-600 dark:text-red-400 mt-0.5">
-                  Enkrypt's adherence check found the item text is NOT supported by the source
+                  Enkrypt&apos;s adherence check found the item text is NOT supported by the source
                   quote. Likely hallucinated or severely paraphrased. Discard unless you can
                   correct the wording.
                 </p>

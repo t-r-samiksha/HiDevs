@@ -10,18 +10,27 @@
   },
   "dependencies": {
     "@ai-sdk/google": "^3.0.83",
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
+    "@jitsi/react-sdk": "^1.4.4",
     "@mastra/core": "^1.48.0",
     "@mastra/qdrant": "^1.1.0",
     "@supabase/supabase-js": "^2.108.2",
     "ai": "^6.0.209",
+    "date-fns": "^4.4.0",
+    "lucide-react": "^1.22.0",
     "next": "16.2.9",
     "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "react-big-calendar": "^1.20.0",
+    "react-dom": "19.2.4",
+    "recharts": "^3.9.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
+    "@types/react-big-calendar": "^1.16.3",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.9",
