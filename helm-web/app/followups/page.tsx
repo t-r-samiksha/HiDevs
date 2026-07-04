@@ -23,15 +23,24 @@ type Escalation = {
 export default function FollowupsPage() {
   const [escalations, setEscalations] = useState<Escalation[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   async function fetchEscalations() {
-    const { data } = await supabase
-      .from("escalation_logs")
-      .select("*, items(text, owner, deadline_raw, status)")
-      .order("created_at", { ascending: false });
-    setEscalations(data || []);
-    setLoading(false);
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const { data, error } = await supabase
+        .from("escalation_logs")
+        .select("*, items(text, owner, deadline_raw, status)")
+        .order("created_at", { ascending: false });
+      if (error) throw new Error(error.message);
+      setEscalations(data || []);
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : "Failed to load the approval queue.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
@@ -63,6 +72,16 @@ export default function FollowupsPage() {
 
         {loading ? (
           <p className="text-gray-500">Loading...</p>
+        ) : loadError ? (
+          <div className="flex flex-col items-center gap-3 py-12">
+            <p className="text-red-500 text-sm">{loadError}</p>
+            <button
+              onClick={fetchEscalations}
+              className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700"
+            >
+              Retry
+            </button>
+          </div>
         ) : escalations.length === 0 ? (
           <div className="text-center py-12">
             <p className="text-gray-400 dark:text-gray-600 mb-2">No follow-ups yet.</p>

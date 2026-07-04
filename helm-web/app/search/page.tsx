@@ -34,8 +34,6 @@ export default function SearchPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Search failed");
       setResults(data.results || []);
-      // The ask agent (Member 1) will eventually return `answer`. Until then
-      // Ask mode just shows semantic results with a heads-up banner.
       setAnswer(typeof data.answer === "string" ? data.answer : null);
       setRan(true);
     } catch (err) {
@@ -97,7 +95,7 @@ export default function SearchPage() {
         <div>
           {mode === "ask" && ran && !answer && (
             <div className="mb-6 rounded-xl border border-slate-800 bg-slate-900 p-4 text-sm text-slate-400">
-              ✨ AI answers are coming soon — showing the most relevant items for now.
+              ✨ No synthesized answer for this query — showing the most relevant items instead.
             </div>
           )}
           {answer && <AnswerCard answer={answer} />}

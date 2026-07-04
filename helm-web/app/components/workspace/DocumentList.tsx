@@ -3,14 +3,21 @@ import DocumentUploadButton from "./DocumentUploadButton";
 
 export type Document = { id: string; name: string; file_url: string };
 
-/** Project documents. Mock/empty until Member 1's documents table lands. */
-export default function DocumentList({ documents }: { documents: Document[] }) {
+export default function DocumentList({
+  documents,
+  projectId,
+  onUploaded,
+}: {
+  documents: Document[];
+  projectId: string;
+  onUploaded: () => void;
+}) {
   if (documents.length === 0) {
     return (
       <div className="rounded-xl border border-slate-800 bg-slate-900 p-6 text-center">
         <p className="text-sm text-slate-500">No documents yet.</p>
         <div className="mt-3">
-          <DocumentUploadButton />
+          <DocumentUploadButton projectId={projectId} onUploaded={onUploaded} />
         </div>
       </div>
     );
@@ -31,7 +38,7 @@ export default function DocumentList({ documents }: { documents: Document[] }) {
         </a>
       ))}
       <div className="pt-2">
-        <DocumentUploadButton />
+        <DocumentUploadButton projectId={projectId} onUploaded={onUploaded} />
       </div>
     </div>
   );

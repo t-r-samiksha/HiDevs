@@ -40,6 +40,7 @@ export default function ReviewPage() {
   const [items, setItems]       = useState<Item[]>([]);
   const [meetingTitles, setMeetingTitles] = useState<Map<string, string>>(new Map());
   const [loading, setLoading]   = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
   const [actioning, setActioning] = useState<string | null>(null);
@@ -47,8 +48,10 @@ export default function ReviewPage() {
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── fetch ──
-  useEffect(() => {
-    async function load() {
+  async function load() {
+    setLoading(true);
+    setLoadError(null);
+    try {
       const [itemsRes, meetingsRes] = await Promise.all([
         supabase
           .from("items")
@@ -57,14 +60,22 @@ export default function ReviewPage() {
           .order("created_at", { ascending: false }),
         supabase.from("meetings").select("id, title"),
       ]);
+      if (itemsRes.error) throw new Error(itemsRes.error.message);
       setItems(itemsRes.data ?? []);
       const m = new Map<string, string>();
       (meetingsRes.data ?? []).forEach((r: { id: string; title: string }) =>
         m.set(r.id, r.title)
       );
       setMeetingTitles(m);
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : "Failed to load the review queue.");
+    } finally {
       setLoading(false);
     }
+  }
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     load();
   }, []);
 
@@ -108,6 +119,21 @@ export default function ReviewPage() {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <p className="text-gray-500">Loading review queue…</p>
+      </div>
+    );
+  }
+
+  // ── error ──
+  if (loadError) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center gap-3">
+        <p className="text-red-500 text-sm">{loadError}</p>
+        <button
+          onClick={load}
+          className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700"
+        >
+          Retry
+        </button>
       </div>
     );
   }

@@ -1,10 +1,16 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { CURRENT_USER_ID, type Message } from "./mockData";
+import type { Message } from "./types";
 
 /** Scrollable message list, newest at the bottom. */
-export default function MessageThread({ messages }: { messages: Message[] }) {
+export default function MessageThread({
+  messages,
+  currentUserId,
+}: {
+  messages: Message[];
+  currentUserId: string | null;
+}) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -22,7 +28,7 @@ export default function MessageThread({ messages }: { messages: Message[] }) {
   return (
     <div className="flex-1 space-y-4 overflow-y-auto p-4">
       {messages.map((m) => {
-        const mine = m.sender_id === CURRENT_USER_ID;
+        const mine = m.sender_id === currentUserId;
         return (
           <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
             <div className={`max-w-[75%] ${mine ? "items-end" : "items-start"}`}>

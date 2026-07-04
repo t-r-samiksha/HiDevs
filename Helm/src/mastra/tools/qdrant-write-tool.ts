@@ -17,12 +17,12 @@ export const qdrantWriteTool = createTool({
     collection: z.string().describe("Target Qdrant collection name"),
     points: z.array(PointSchema).describe("Vector points to upsert"),
     vector_size: z.number().optional().describe(
-      "Embedding dimension. Defaults to 768 (gemini-embedding-001)"
+      "Embedding dimension. Defaults to 3072 (gemini-embedding-001)"
     ),
   }),
   outputSchema: z.object({ upserted: z.number() }),
   execute: async (inputData) => {
-    const { collection, points, vector_size = 768 } = inputData;
+    const { collection, points, vector_size = 3072 } = inputData;
     const base = process.env.QDRANT_URL!;
     const headers = {
       "Content-Type": "application/json",

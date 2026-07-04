@@ -4,8 +4,10 @@ import { useEffect, useState } from "react";
 import { FileBarChart } from "lucide-react";
 import WeeklyReportCard, { type WeeklyReport } from "../components/reports/WeeklyReportCard";
 
-// Mock reports until Member 1 ships GET /api/reports/weekly.
-// TODO: Replace MOCK_REPORTS with the real fetch below.
+// Single hardcoded project until the pipeline supports real multi-project selection.
+const PROJECT_ID = "a1b2c3d4-0000-0000-0000-000000000001";
+
+// Fallback shown only if the real API genuinely errors (not the normal path anymore).
 const MOCK_REPORTS: WeeklyReport[] = [
   {
     id: "r1",
@@ -38,6 +40,25 @@ const MOCK_REPORTS: WeeklyReport[] = [
   },
 ];
 
+// Adapts a raw `reports` row (singular, as returned by GET /api/reports/weekly)
+// into the shape WeeklyReportCard expects.
+function adaptReport(raw: any): WeeklyReport {
+  return {
+    id: raw.id,
+    week_start: raw.week_start,
+    week_end: raw.week_end,
+    meetings_count: raw.meetings_count ?? 0,
+    tasks_completed: raw.tasks_completed ?? 0,
+    tasks_pending: raw.tasks_pending ?? 0,
+    major_decisions: raw.major_decisions ?? [],
+    meeting_roi_scores: (raw.meeting_roi_scores ?? []).map((m: any) => ({
+      title: m.title ?? m.meeting_title ?? "Untitled meeting",
+      itemCount: m.itemCount ?? m.items_produced ?? 0,
+    })),
+    signals: raw.signals,
+  };
+}
+
 export default function ReportsPage() {
   const [reports, setReports] = useState<WeeklyReport[] | null>(null);
   const [usingMock, setUsingMock] = useState(false);
@@ -45,10 +66,13 @@ export default function ReportsPage() {
 
   async function load() {
     try {
-      const res = await fetch("/api/reports/weekly");
+      const res = await fetch(`/api/reports/weekly?project_id=${PROJECT_ID}`);
       if (!res.ok) throw new Error("not ready");
       const data = await res.json();
-      setReports(data.reports ?? []);
+      // The API returns the single most-recent report ({report: {...} | null}),
+      // not a full history array — normalize into the array shape this page renders.
+      const raw = data.reports ?? (data.report ? [data.report] : []);
+      setReports(raw.map(adaptReport));
       setUsingMock(false);
     } catch {
       setReports(MOCK_REPORTS);
@@ -59,11 +83,19 @@ export default function ReportsPage() {
   async function generate() {
     setGenerating(true);
     try {
-      const res = await fetch("/api/reports/weekly/generate", { method: "POST" });
+      const res = await fetch("/api/reports/weekly/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ project_id: PROJECT_ID }),
+      });
       if (res.ok) await load();
-      else alert("Report generation isn't available yet (pending Member 1's reports API).");
-    } catch {
-      alert("Report generation isn't available yet (pending Member 1's reports API).");
+      else {
+        const data = await res.json().catch(() => ({}));
+        alert("Report generation failed: " + (data.error || "unknown error"));
+      }
+    } catch (err) {
+      console.error("Report generation failed:", err);
+      alert("Report generation failed — see console for details.");
     } finally {
       setGenerating(false);
     }
@@ -94,7 +126,7 @@ export default function ReportsPage() {
 
       {usingMock && (
         <div className="mb-4 rounded-lg border border-amber-800 bg-amber-950/60 px-3 py-2 text-xs text-amber-300">
-          Showing sample data — live reports arrive with Member 1&apos;s reports API.
+          Showing sample data — couldn&apos;t reach the reports API. Retry or generate a fresh report.
         </div>
       )}
 

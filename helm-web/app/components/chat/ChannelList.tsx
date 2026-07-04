@@ -1,31 +1,44 @@
 "use client";
 
 import { Hash, Plus } from "lucide-react";
-import type { Channel } from "./mockData";
+import type { Channel } from "./types";
 import UnreadBadge from "./UnreadBadge";
 import DMList from "./DMList";
+
+type DirectoryUser = { id: string; name: string };
 
 /** Left panel: channels + DMs for the current user. */
 export default function ChannelList({
   channels,
   selectedId,
   onSelect,
+  directory,
+  onCreateChannel,
+  onCreateDM,
 }: {
   channels: Channel[];
   selectedId: string | null;
   onSelect: (id: string) => void;
+  directory: DirectoryUser[];
+  onCreateChannel: (name: string) => void;
+  onCreateDM: (userId: string, userName: string) => void;
 }) {
   const rooms = channels.filter((c) => !c.is_dm);
   const dms = channels.filter((c) => c.is_dm);
 
+  function handleAddChannel() {
+    const name = window.prompt("New channel name:");
+    if (name?.trim()) onCreateChannel(name.trim());
+  }
+
   return (
     <div className="flex h-full flex-col">
-      <Group title="Channels" onAdd={() => alert("New channel — coming with Member 1's chat tables.")}>
+      <Group title="Channels" onAdd={handleAddChannel}>
         {rooms.map((c) => (
           <ChannelRow key={c.id} channel={c} active={c.id === selectedId} onSelect={onSelect} icon={<Hash size={15} />} />
         ))}
       </Group>
-      <DMList dms={dms} selectedId={selectedId} onSelect={onSelect} />
+      <DMList dms={dms} selectedId={selectedId} onSelect={onSelect} directory={directory} onCreateDM={onCreateDM} />
     </div>
   );
 }

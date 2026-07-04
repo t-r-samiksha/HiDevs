@@ -8,6 +8,8 @@ import { supabase } from "@/lib/supabase";
 
 type Project = { id: string; name: string };
 
+// Fallback name used only if the rooms API is unreachable — the room still
+// works via public Jitsi even without a persisted `rooms` row in that case.
 function slugRoom(title: string) {
   const base = title.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "meeting";
   return `helm-${base}-${Math.random().toString(36).slice(2, 7)}`;
@@ -35,26 +37,35 @@ export default function NewRoomPage() {
   async function create(startNow: boolean) {
     if (!title.trim()) return;
     setCreating(true);
-    const roomName = slugRoom(title);
-    // Best-effort persist via Member 1's room API; not required for the room to work.
+
+    // The server is the source of truth for the room name — join whatever
+    // name it actually persisted, so the `rooms` row always matches the real
+    // Jitsi room (previously the client joined its own name while the server
+    // silently generated a different one, so calendar/workspace lookups for
+    // that room never resolved).
+    let roomName = slugRoom(title);
     try {
-      await fetch("/api/rooms", {
+      const res = await fetch("/api/rooms", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          jitsi_room_name: roomName,
           project_id: projectId || null,
           scheduled_time: startNow ? null : scheduledTime || null,
           status: startNow ? "live" : "scheduled",
         }),
       });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.jitsi_room_name) roomName = data.jitsi_room_name;
+      }
     } catch {
-      /* API not ready — the public Jitsi room still works */
+      /* API unreachable — fall back to the locally-generated name so the room still works */
     }
+
     if (startNow) {
       router.push(`/rooms/${roomName}`);
     } else {
-      alert("Meeting scheduled. It will appear on the calendar once the rooms API is live.");
+      alert("Meeting scheduled — it will appear on the calendar.");
       router.push("/calendar");
     }
   }

@@ -47,6 +47,9 @@ type ScanResult = { evaluated?: number; transitions?: unknown[] };
 // Priority order for the action-item list: blocked → at_risk → open → in_progress → done.
 const STATUS_RANK: Record<string, number> = { blocked: 0, at_risk: 1, open: 2, in_progress: 3, done: 4 };
 
+// Single hardcoded project until the pipeline supports real multi-project selection.
+const PROJECT_ID = "a1b2c3d4-0000-0000-0000-000000000001";
+
 export default function Dashboard() {
   const [items, setItems] = useState<Item[]>([]);
   const [meetings, setMeetings] = useState<Meeting[]>([]);
@@ -74,7 +77,7 @@ export default function Dashboard() {
       const res = await fetch("/api/search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: searchQuery }),
+        body: JSON.stringify({ query: searchQuery, mode: "ask" }),
       });
       const data = await res.json();
       setSearchResults(data.results || []);
@@ -144,16 +147,23 @@ export default function Dashboard() {
     setContradictions(contradictionsRes.data || []);
     setPendingFollowups(followupRes.count ?? 0);
 
-    // Strategic signals — from Member 1's insights API when available.
-    // TODO: replace fallback once /api/dashboard/insights ships.
+    // Strategic signals — real 5-engine detector, scoped to the current project.
     try {
-      const res = await fetch("/api/dashboard/insights");
+      const res = await fetch(`/api/dashboard/insights?project_id=${PROJECT_ID}`);
       if (res.ok) {
         const data = await res.json();
-        setInsights(data.insights ?? data.signals ?? []);
+        const raw = data.insights ?? data.signals ?? [];
+        setInsights(
+          raw.map((s: Record<string, unknown>, i: number) => ({
+            id: (s.id as string) ?? `${s.type ?? "signal"}-${i}`,
+            text: (s.text as string) ?? `${s.title ?? ""}${s.title && s.description ? " — " : ""}${s.description ?? ""}`,
+            actionLabel: (s.actionLabel as string) ?? (s.action_label as string) ?? undefined,
+            actionHref: s.actionHref as string | undefined,
+          }))
+        );
       }
-    } catch {
-      /* no insights endpoint yet */
+    } catch (err) {
+      console.error("Insights fetch failed:", err);
     }
     setLoading(false);
   }
@@ -305,7 +315,7 @@ export default function Dashboard() {
         <h2 className="mb-3 text-sm font-medium text-slate-400">📈 Strategic signals</h2>
         {insights.length === 0 ? (
           <div className="rounded-xl border border-dashed border-slate-800 bg-slate-900/50 p-4 text-sm text-slate-500">
-            No signals yet — insights appear once Member 1&apos;s insights API is live.
+            No signals yet — check back after a few more meetings are processed.
           </div>
         ) : (
           <div className="space-y-2">

@@ -36,7 +36,10 @@ export default function SignupPage() {
     }
 
     // Mirror the auth user into the public `users` table so role/manager
-    // hierarchy queries work. Best-effort: don't block signup on failure.
+    // hierarchy queries work. If this fails, the account exists in auth but
+    // has no profile row — manager/VP hierarchy and chat features would break
+    // silently for them, so surface the error and back the sign-up out
+    // instead of continuing into a half-created account.
     if (data.user) {
       const { error: insertErr } = await supabase.from("users").insert({
         id: data.user.id,
@@ -44,7 +47,13 @@ export default function SignupPage() {
         email,
         role,
       });
-      if (insertErr) console.error("users insert failed:", insertErr.message);
+      if (insertErr) {
+        console.error("users insert failed:", insertErr.message);
+        await supabase.auth.signOut();
+        setLoading(false);
+        setError(`Account setup incomplete: ${insertErr.message}. Please try signing up again.`);
+        return;
+      }
     }
 
     setLoading(false);
