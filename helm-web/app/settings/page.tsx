@@ -19,6 +19,7 @@ export default function SettingsPage() {
   const [slackUrl, setSlackUrl] = useState("");
   const [emailOn, setEmailOn] = useState(true);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
   function flash(msg: string) {
@@ -27,20 +28,28 @@ export default function SettingsPage() {
   }
 
   async function load() {
-    const [projRes, usersRes] = await Promise.all([
-      supabase.from("projects").select("id, name, description").limit(1),
-      supabase.from("users").select("id, name, email, role").order("name"),
-    ]);
-    const proj = (projRes.data as Project[] | null)?.[0] ?? null;
-    setProject(proj);
-    setName(proj?.name ?? "");
-    setDescription(proj?.description ?? "");
-    setUsers((usersRes.data as User[]) ?? []);
-    // Notification prefs aren't in the schema yet — persist locally for now.
-    // TODO: move to a settings table when Member 1 adds one.
-    setSlackUrl(localStorage.getItem("helm.slackUrl") ?? "");
-    setEmailOn(localStorage.getItem("helm.emailOn") !== "false");
-    setLoading(false);
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const [projRes, usersRes] = await Promise.all([
+        supabase.from("projects").select("id, name, description").limit(1),
+        supabase.from("users").select("id, name, email, role").order("name"),
+      ]);
+      if (projRes.error) throw new Error(projRes.error.message);
+      if (usersRes.error) throw new Error(usersRes.error.message);
+      const proj = (projRes.data as Project[] | null)?.[0] ?? null;
+      setProject(proj);
+      setName(proj?.name ?? "");
+      setDescription(proj?.description ?? "");
+      setUsers((usersRes.data as User[]) ?? []);
+      // Notification prefs aren't in the schema yet — persist locally for now.
+      setSlackUrl(localStorage.getItem("helm.slackUrl") ?? "");
+      setEmailOn(localStorage.getItem("helm.emailOn") !== "false");
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : "Failed to load settings.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
@@ -87,6 +96,20 @@ export default function SettingsPage() {
     return (
       <div className="mx-auto max-w-3xl px-4 py-6 md:px-6">
         <div className="h-64 animate-pulse rounded-2xl bg-slate-900" />
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="mx-auto flex max-w-3xl flex-col items-center gap-3 px-4 py-16 text-center md:px-6">
+        <p className="text-sm text-red-400">{loadError}</p>
+        <button
+          onClick={load}
+          className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+        >
+          Retry
+        </button>
       </div>
     );
   }

@@ -9,7 +9,7 @@ export default function MessageThread({
   currentUserId,
 }: {
   messages: Message[];
-  currentUserId: string;
+  currentUserId: string | null;
 }) {
   const bottomRef = useRef<HTMLDivElement>(null);
 

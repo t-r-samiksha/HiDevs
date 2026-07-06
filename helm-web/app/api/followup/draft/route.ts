@@ -129,6 +129,20 @@ Keep it gentle — this is the first nudge.`;
       (enkryptData.summary?.policy_violation ?? 0) === 0 &&
       (enkryptData.summary?.toxicity ?? 0) === 0;
 
+    // Enkrypt Checkpoint 4 hard gate: a draft that fails the policy/toxicity
+    // check never enters the approval queue — it's blocked here, not just
+    // flagged for a human to notice later.
+    if (!policyPassed) {
+      return NextResponse.json(
+        {
+          error: "Follow-up draft failed policy check. Please revise manually.",
+          policy_passed: false,
+          draft,
+        },
+        { status: 422 }
+      );
+    }
+
     const { data: log, error: logErr } = await supabase
       .from("escalation_logs")
       .insert({

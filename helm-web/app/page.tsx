@@ -72,10 +72,10 @@ export default function Dashboard() {
     setSearchDone(false);
     setSearchAnswer(null);
     try {
-      const res = await fetch("/api/ask", {
+      const res = await fetch("/api/search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: searchQuery, project_id: PROJECT_ID }),
+        body: JSON.stringify({ query: searchQuery, mode: "ask" }),
       });
       const data = await res.json();
       setSearchResults(
@@ -156,7 +156,7 @@ export default function Dashboard() {
     setContradictions(contradictionsRes.data || []);
     setPendingFollowups(followupRes.count ?? 0);
 
-    // Strategic signals from Member 1's insights API.
+    // Strategic signals — real 5-engine detector, scoped to the current project.
     try {
       const res = await fetch(`/api/dashboard/insights?project_id=${PROJECT_ID}`);
       if (res.ok) {
@@ -167,8 +167,9 @@ export default function Dashboard() {
           commitment_drift: "/items",
           meeting_roi: "/reports",
         };
+        const raw = data.insights ?? data.signals ?? [];
         setInsights(
-          (data.signals ?? []).map((s: { type: string; title: string; description: string; action_label?: string }, i: number) => ({
+          raw.map((s: { type: string; title: string; description: string; action_label?: string }, i: number) => ({
             id: s.type ?? String(i),
             text: `${s.title} — ${s.description}`,
             actionLabel: s.action_label,
@@ -176,8 +177,8 @@ export default function Dashboard() {
           }))
         );
       }
-    } catch {
-      /* insights unavailable */
+    } catch (err) {
+      console.error("Insights fetch failed:", err);
     }
     setLoading(false);
   }
@@ -329,7 +330,7 @@ export default function Dashboard() {
         <h2 className="mb-3 text-sm font-medium text-slate-400">📈 Strategic signals</h2>
         {insights.length === 0 ? (
           <div className="rounded-xl border border-dashed border-slate-800 bg-slate-900/50 p-4 text-sm text-slate-500">
-            No signals yet — insights appear once Member 1&apos;s insights API is live.
+            No signals yet — check back after a few more meetings are processed.
           </div>
         ) : (
           <div className="space-y-2">

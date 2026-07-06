@@ -42,7 +42,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const { project_id, scheduled_time, meeting_id } = await req.json();
+    const { project_id, scheduled_time, meeting_id, status } = await req.json();
     if (!project_id) {
       return NextResponse.json({ error: "project_id is required" }, { status: 400 });
     }
@@ -56,7 +56,7 @@ export async function POST(req: NextRequest) {
         jitsi_room_name: jitsiRoomName,
         scheduled_time: scheduled_time || null,
         meeting_id: meeting_id || null,
-        status: "scheduled",
+        status: status === "live" ? "live" : "scheduled",
       })
       .select()
       .single();

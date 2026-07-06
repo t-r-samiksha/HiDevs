@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
+import { CalendarDays } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import type { CalendarEvent } from "../components/calendar/CalendarGrid";
 import ReminderBell from "../components/calendar/ReminderBell";
@@ -137,7 +138,17 @@ export default function CalendarPage() {
 
       {events === null && !error && <div className="h-[72vh] animate-pulse rounded-2xl bg-slate-900" />}
 
-      {events && !error && <CalendarGrid events={events} />}
+      {events && events.length === 0 && !error && (
+        <div className="rounded-xl border border-slate-800 bg-slate-900 py-16 text-center">
+          <CalendarDays className="mx-auto mb-3 text-slate-600" size={40} />
+          <p className="font-medium text-slate-300">Nothing scheduled</p>
+          <p className="mt-1 text-sm text-slate-500">
+            Item deadlines and meeting rooms will show up here once you have some.
+          </p>
+        </div>
+      )}
+
+      {events && events.length > 0 && !error && <CalendarGrid events={events} />}
     </div>
   );
 }

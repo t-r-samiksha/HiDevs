@@ -10,6 +10,11 @@ const supabase = createClient(
 const SETUP_SQL = `
 -- Helm extended schema (idempotent)
 
+-- Real per-check Enkrypt breakdown (adherence/relevancy scores, financial-claim
+-- flag) captured at extraction time, so /api/items/[id]/trust can return actual
+-- data instead of guessing from the single trust_score number.
+ALTER TABLE items ADD COLUMN IF NOT EXISTS enkrypt_checks JSONB;
+
 CREATE TABLE IF NOT EXISTS rooms (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID REFERENCES projects(id),

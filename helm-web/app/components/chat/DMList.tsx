@@ -4,22 +4,44 @@ import { User, Plus } from "lucide-react";
 import type { Channel } from "./types";
 import UnreadBadge from "./UnreadBadge";
 
+type DirectoryUser = { id: string; name: string };
+
 /** Direct-message conversations for the current user. */
 export default function DMList({
   dms,
   selectedId,
   onSelect,
+  directory,
+  onCreateDM,
 }: {
   dms: Channel[];
   selectedId: string | null;
   onSelect: (id: string) => void;
+  directory: DirectoryUser[];
+  onCreateDM: (userId: string, userName: string) => void;
 }) {
+  function handleNewDM() {
+    if (directory.length === 0) {
+      alert("No other teammates found to DM.");
+      return;
+    }
+    const names = directory.map((u) => u.name).join(", ");
+    const name = window.prompt(`Start a DM with (${names}):`);
+    if (!name?.trim()) return;
+    const match = directory.find((u) => u.name.toLowerCase() === name.trim().toLowerCase());
+    if (!match) {
+      alert(`No teammate named "${name}" found.`);
+      return;
+    }
+    onCreateDM(match.id, match.name);
+  }
+
   return (
     <div className="mb-4">
       <div className="mb-1 flex items-center justify-between px-2">
         <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Direct messages</span>
         <button
-          onClick={() => alert("New DM — coming with Member 1's chat tables.")}
+          onClick={handleNewDM}
           className="text-slate-500 hover:text-slate-200"
           aria-label="New DM"
         >

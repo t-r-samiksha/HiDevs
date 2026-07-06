@@ -1,7 +1,3 @@
-// Shared chat types, backed by Member 1's channels / messages tables.
-//   Channel ← channels JOIN channel_members (for the current user)
-//   Message ← messages WHERE channel_id = ? ORDER BY created_at
-
 export type Channel = {
   id: string;
   name: string;

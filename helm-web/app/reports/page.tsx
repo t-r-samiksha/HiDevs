@@ -5,31 +5,23 @@ import { FileBarChart } from "lucide-react";
 import WeeklyReportCard, { type WeeklyReport } from "../components/reports/WeeklyReportCard";
 import { PROJECT_ID } from "../lib/project";
 
-// Map a raw `reports` row to the card's shape.
-function mapReport(r: {
-  id: string;
-  week_start: string;
-  week_end: string;
-  meetings_count?: number;
-  tasks_completed?: number;
-  tasks_pending?: number;
-  major_decisions?: unknown[];
-  meeting_roi_scores?: { meeting_title?: string; title?: string; items_produced?: number; itemCount?: number }[];
-}): WeeklyReport {
+
+// Adapts a raw `reports` row (singular, as returned by GET /api/reports/weekly)
+// into the shape WeeklyReportCard expects.
+function adaptReport(raw: any): WeeklyReport {
   return {
-    id: r.id,
-    week_start: r.week_start,
-    week_end: r.week_end,
-    meetings_count: r.meetings_count ?? 0,
-    tasks_completed: r.tasks_completed ?? 0,
-    tasks_pending: r.tasks_pending ?? 0,
-    major_decisions: (r.major_decisions ?? []).map((d) =>
-      typeof d === "string" ? d : ((d as { text?: string })?.text ?? String(d))
-    ),
-    meeting_roi_scores: (r.meeting_roi_scores ?? []).map((m) => ({
-      title: m.meeting_title ?? m.title ?? "Meeting",
-      itemCount: m.items_produced ?? m.itemCount ?? 0,
+    id: raw.id,
+    week_start: raw.week_start,
+    week_end: raw.week_end,
+    meetings_count: raw.meetings_count ?? 0,
+    tasks_completed: raw.tasks_completed ?? 0,
+    tasks_pending: raw.tasks_pending ?? 0,
+    major_decisions: raw.major_decisions ?? [],
+    meeting_roi_scores: (raw.meeting_roi_scores ?? []).map((m: any) => ({
+      title: m.title ?? m.meeting_title ?? "Untitled meeting",
+      itemCount: m.itemCount ?? m.items_produced ?? 0,
     })),
+    signals: raw.signals,
   };
 }
 
@@ -40,8 +32,12 @@ export default function ReportsPage() {
   async function load() {
     try {
       const res = await fetch(`/api/reports/weekly?project_id=${PROJECT_ID}`);
+      if (!res.ok) throw new Error("not ready");
       const data = await res.json();
-      setReports(data.report ? [mapReport(data.report)] : []);
+      // The API returns the single most-recent report ({report: {...} | null}),
+      // not a full history array — normalize into the array shape this page renders.
+      const raw = data.reports ?? (data.report ? [data.report] : []);
+      setReports(raw.map(adaptReport));
     } catch {
       setReports([]);
     }
@@ -57,11 +53,12 @@ export default function ReportsPage() {
       });
       if (res.ok) await load();
       else {
-        const d = await res.json().catch(() => ({}));
-        alert("Report generation failed: " + (d.error || res.statusText));
+        const data = await res.json().catch(() => ({}));
+        alert("Report generation failed: " + (data.error || "unknown error"));
       }
-    } catch (e) {
-      alert("Report generation failed: " + (e instanceof Error ? e.message : "unknown"));
+    } catch (err) {
+      console.error("Report generation failed:", err);
+      alert("Report generation failed — see console for details.");
     } finally {
       setGenerating(false);
     }

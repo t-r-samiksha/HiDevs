@@ -6,7 +6,6 @@ import AnswerCard from "../components/search/AnswerCard";
 import AskBar, { type SearchMode as Mode } from "../components/search/AskBar";
 import SearchBar from "../components/search/SearchBar";
 import SemanticResultsList, { type SearchResult as Result } from "../components/search/SemanticResultsList";
-import { PROJECT_ID } from "../lib/project";
 
 type TypeFilter = "all" | "decision" | "action_item";
 
@@ -27,38 +26,15 @@ export default function SearchPage() {
     setError(null);
     setAnswer(null);
     try {
-      if (mode === "ask") {
-        // AI answer with citations (Member 1's ask agent).
-        const res = await fetch("/api/ask", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ question: query, project_id: PROJECT_ID }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "Ask failed");
-        setAnswer(typeof data.answer === "string" ? data.answer : null);
-        setResults(
-          (data.results || []).map((r: Partial<Result>) => ({
-            text: r.text ?? "",
-            type: r.type ?? "",
-            owner: r.owner ?? "",
-            meeting_title: r.meeting_title ?? "",
-            source_quote: r.source_quote ?? "",
-            supersedes_hint: "",
-            trust_score: r.trust_score ?? 0,
-            score: r.trust_score ?? 0,
-          }))
-        );
-      } else {
-        const res = await fetch("/api/search", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ query }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "Search failed");
-        setResults(data.results || []);
-      }
+      const res = await fetch("/api/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query, mode }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Search failed");
+      setResults(data.results || []);
+      setAnswer(typeof data.answer === "string" ? data.answer : null);
       setRan(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Search failed");
@@ -119,7 +95,7 @@ export default function SearchPage() {
         <div>
           {mode === "ask" && ran && !answer && (
             <div className="mb-6 rounded-xl border border-slate-800 bg-slate-900 p-4 text-sm text-slate-400">
-              ✨ AI answers are coming soon — showing the most relevant items for now.
+              ✨ No synthesized answer for this query — showing the most relevant items instead.
             </div>
           )}
           {answer && <AnswerCard answer={answer} />}

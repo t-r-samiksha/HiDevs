@@ -8,7 +8,20 @@
       "Bash(node test-routes.mjs)",
       "PowerShell(Get-ChildItem -Path \"D:\\\\samiksha-work\\\\Helm\\\\helm-web\\\\app\\\\api\" -Recurse -Filter \"route.ts\" | Select-Object FullName | Where-Object { $_.FullName -match '\\\\[' })",
       "PowerShell(Set-Location \"D:\\\\samiksha-work\\\\Helm\\\\helm-web\"; npx tsc --noEmit 2>&1; Write-Host \"Exit: $LASTEXITCODE\")",
-      "PowerShell(Get-ChildItem -Path \"D:\\\\samiksha-work\\\\Helm\\\\helm-web\\\\app\\\\api\" -Recurse -Filter \"route.ts\" | ForEach-Object { $_.FullName.Replace\\(\"D:\\\\samiksha-work\\\\Helm\\\\helm-web\\\\app\\\\api\\\\\", \"\"\\) } | Sort-Object)"
+      "PowerShell(Get-ChildItem -Path \"D:\\\\samiksha-work\\\\Helm\\\\helm-web\\\\app\\\\api\" -Recurse -Filter \"route.ts\" | ForEach-Object { $_.FullName.Replace\\(\"D:\\\\samiksha-work\\\\Helm\\\\helm-web\\\\app\\\\api\\\\\", \"\"\\) } | Sort-Object)",
+      "Bash(jobs -l)",
+      "PowerShell(Get-Process | Where-Object { $_.ProcessName -match 'node|npm' } | Select-Object Id, ProcessName, StartTime)",
+      "Bash(node -e \"console.log\\(require\\('./node_modules/lucide-react/package.json'\\).version\\)\")",
+      "Bash(curl -s -X POST http://localhost:3000/api/setup-db)",
+      "Bash(curl -s \"http://localhost:3000/api/channels?project_id=a1b2c3d4-0000-0000-0000-000000000001\")",
+      "Bash(curl -s \"http://localhost:3000/api/integrations?workspace_id=a1b2c3d4-0000-0000-0000-000000000001\")",
+      "Bash(curl -s \"http://localhost:3000/api/projects/a1b2c3d4-0000-0000-0000-000000000001/documents\")",
+      "Bash(curl -s \"http://localhost:3000/api/reports/weekly\")",
+      "Bash(curl -s \"http://localhost:3000/api/dashboard/insights\")",
+      "Bash(curl -s \"http://localhost:3000/api/reports/weekly?project_id=a1b2c3d4-0000-0000-0000-000000000001\")",
+      "Bash(curl -s \"http://localhost:3000/api/followups/queue\")",
+      "Bash(curl -s \"http://localhost:3000/api/dashboard/insights?project_id=a1b2c3d4-0000-0000-0000-000000000001\")",
+      "Bash(curl -s \"http://localhost:3000/api/projects\")"
     ]
   }
 }

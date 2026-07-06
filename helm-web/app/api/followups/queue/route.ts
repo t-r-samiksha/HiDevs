@@ -15,7 +15,7 @@ export async function GET(req: NextRequest) {
     const { data, error } = await supabase
       .from("escalation_logs")
       .select(
-        `id, item_id, tier, draft, status, created_at,
+        `id, item_id, tier, drafted_text, status, created_at,
          items(id, text, owner, deadline_raw, type, project_id)`
       )
       .eq("status", "pending")
