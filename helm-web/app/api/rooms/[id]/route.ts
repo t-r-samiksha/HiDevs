@@ -13,10 +13,14 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // The room page addresses rooms by their jitsi_room_name (what's in the
+    // URL), while other callers use the UUID primary key — accept either.
+    const id = (await params).id;
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
     const { data, error } = await supabase
       .from("rooms")
       .select("*, meetings(id, title, date)")
-      .eq("id", (await params).id)
+      .eq(isUuid ? "id" : "jitsi_room_name", id)
       .single();
 
     if (error || !data) {

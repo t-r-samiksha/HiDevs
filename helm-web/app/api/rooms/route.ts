@@ -42,24 +42,32 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const { project_id, scheduled_time, meeting_id, status } = await req.json();
+    const { project_id, scheduled_time, meeting_id, status, created_by } = await req.json();
     if (!project_id) {
       return NextResponse.json({ error: "project_id is required" }, { status: 400 });
     }
 
     const jitsiRoomName = `helm-${randomUUID()}`;
 
-    const { data, error } = await supabase
+    const baseRow = {
+      project_id,
+      jitsi_room_name: jitsiRoomName,
+      scheduled_time: scheduled_time || null,
+      meeting_id: meeting_id || null,
+      status: status === "live" ? "live" : "scheduled",
+    };
+
+    let { data, error } = await supabase
       .from("rooms")
-      .insert({
-        project_id,
-        jitsi_room_name: jitsiRoomName,
-        scheduled_time: scheduled_time || null,
-        meeting_id: meeting_id || null,
-        status: status === "live" ? "live" : "scheduled",
-      })
+      .insert({ ...baseRow, created_by: created_by || null })
       .select()
       .single();
+
+    // Tolerate DBs where the created_by column hasn't been added yet — the room
+    // still gets created, just without a recorded host until the migration runs.
+    if (error && /created_by/.test(error.message)) {
+      ({ data, error } = await supabase.from("rooms").insert(baseRow).select().single());
+    }
 
     if (error) throw new Error(error.message);
 

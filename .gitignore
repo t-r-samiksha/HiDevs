@@ -1,0 +1,6 @@
+# DuckDB runtime database files (Mastra). These are generated at runtime, not
+# source — and the .wal gets locked by the running dev server, which breaks
+# `git add` on Windows ("Permission denied").
+*.duckdb
+*.duckdb.wal
+*.duckdb.tmp

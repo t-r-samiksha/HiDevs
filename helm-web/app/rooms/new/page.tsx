@@ -45,6 +45,8 @@ export default function NewRoomPage() {
     // that room never resolved).
     let roomName = slugRoom(title);
     try {
+      // The starter of the meeting becomes its host (Helm-level admin).
+      const { data: { user } } = await supabase.auth.getUser();
       const res = await fetch("/api/rooms", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -52,6 +54,7 @@ export default function NewRoomPage() {
           project_id: projectId || null,
           scheduled_time: startNow ? null : scheduledTime || null,
           status: startNow ? "live" : "scheduled",
+          created_by: user?.id ?? null,
         }),
       });
       if (res.ok) {
@@ -60,6 +63,14 @@ export default function NewRoomPage() {
       }
     } catch {
       /* API unreachable — fall back to the locally-generated name so the room still works */
+    }
+
+    // Mark this browser as the meeting's host — the starter is the host with no
+    // separate login, and independent of the rooms.created_by column.
+    try {
+      localStorage.setItem(`helm_host_${roomName}`, "1");
+    } catch {
+      /* localStorage unavailable */
     }
 
     if (startNow) {

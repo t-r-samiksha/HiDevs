@@ -22,8 +22,12 @@ CREATE TABLE IF NOT EXISTS rooms (
   scheduled_time TIMESTAMPTZ,
   status TEXT DEFAULT 'scheduled' CHECK (status IN ('scheduled','live','ended')),
   meeting_id UUID REFERENCES meetings(id),
+  created_by UUID REFERENCES users(id),
   created_at TIMESTAMPTZ DEFAULT now()
 );
+-- Host of the meeting = the user who started it. Grants Helm-level admin
+-- controls (end-for-all, recording) on the room page.
+ALTER TABLE rooms ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES users(id);
 
 CREATE TABLE IF NOT EXISTS channels (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
