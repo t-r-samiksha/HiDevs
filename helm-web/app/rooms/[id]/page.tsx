@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { Loader2, Radio } from "lucide-react";
@@ -31,6 +31,15 @@ export default function RoomPage() {
   const [processing, setProcessing] = useState<string | null>(null);
 
   const recorder = useMeetingRecorder();
+  // Roster of display names seen in the room, kept in a ref (not state) so
+  // endMeeting — memoized once via useCallback — always reads the latest
+  // value instead of a stale closure from when it was created.
+  const participantsRef = useRef<string[]>([]);
+  // Timeline of Jitsi's own dominant-speaker changes, timestamped relative to
+  // recorder.startedAt so they line up with Whisper's segment timestamps on
+  // the resulting audio blob. Reset whenever a recording (re)starts, since a
+  // new MediaRecorder means a new time origin.
+  const speakerTimelineRef = useRef<Array<{ atMs: number; name: string }>>([]);
 
   useEffect(() => {
     (async () => {
@@ -79,6 +88,7 @@ export default function RoomPage() {
   useEffect(() => {
     if (isHost && loaded && !ended && !recorder.recording && !autoTried) {
       setAutoTried(true);
+      speakerTimelineRef.current = [];
       recorder.start("mic").catch(() => {});
     }
   }, [isHost, loaded, ended, recorder, autoTried]);
@@ -95,6 +105,12 @@ export default function RoomPage() {
           const form = new FormData();
           form.append("file", blob, "meeting.webm");
           form.append("title", title);
+          if (participantsRef.current.length > 0) {
+            form.append("participants", JSON.stringify(participantsRef.current));
+          }
+          if (speakerTimelineRef.current.length > 0) {
+            form.append("speakerTimeline", JSON.stringify(speakerTimelineRef.current));
+          }
           const res = await fetch("/api/pipeline", { method: "POST", body: form });
           const data = await res.json().catch(() => ({}));
           if (res.ok && data.meeting_id) {
@@ -151,7 +167,10 @@ export default function RoomPage() {
             )}
             {recorder.mode !== "full" && (
               <button
-                onClick={() => recorder.start("full").catch(() => {})}
+                onClick={() => {
+                  speakerTimelineRef.current = [];
+                  recorder.start("full").catch(() => {});
+                }}
                 className="shrink-0 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
               >
                 Capture everyone (share tab audio)
@@ -176,6 +195,16 @@ export default function RoomPage() {
             email={email}
             isHost={isHost}
             onClose={endMeeting}
+            onParticipantsChange={(names) => {
+              participantsRef.current = names;
+            }}
+            onDominantSpeakerChanged={(name) => {
+              if (recorder.startedAt == null) return;
+              speakerTimelineRef.current.push({
+                atMs: Date.now() - recorder.startedAt,
+                name: name || "Unknown speaker",
+              });
+            }}
           />
           <p className="mt-2 text-center text-xs text-slate-500">
             Meeting not loading? An ad-blocker or privacy shield may be blocking Jitsi.{" "}

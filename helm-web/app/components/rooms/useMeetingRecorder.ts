@@ -21,6 +21,11 @@ export function useMeetingRecorder() {
   const [recording, setRecording] = useState(false);
   const [mode, setMode] = useState<RecordMode | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Epoch ms when the current recording actually started — lets callers
+  // timestamp live events (e.g. Jitsi's dominantSpeakerChanged) on the same
+  // clock as the recorded audio, so they line up with Whisper's segment
+  // timestamps after the fact.
+  const [startedAt, setStartedAt] = useState<number | null>(null);
 
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -52,6 +57,7 @@ export function useMeetingRecorder() {
         cleanup();
         setRecording(false);
         setMode(null);
+        setStartedAt(null);
         resolve(blob && blob.size ? blob : null);
       };
       rec.stop();
@@ -113,6 +119,7 @@ export function useMeetingRecorder() {
         ctxRef.current = ctx;
         setMode(requested);
         setRecording(true);
+        setStartedAt(Date.now());
       } catch (e) {
         const msg = e instanceof Error ? e.message : "Could not start recording";
         setError(msg);
@@ -122,5 +129,5 @@ export function useMeetingRecorder() {
     [stopInternal]
   );
 
-  return { recording, mode, error, start, stop: stopInternal };
+  return { recording, mode, error, startedAt, start, stop: stopInternal };
 }

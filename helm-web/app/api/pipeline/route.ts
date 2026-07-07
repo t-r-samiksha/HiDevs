@@ -6,6 +6,7 @@ import { QdrantVector } from "@mastra/qdrant";
 import { google } from "@ai-sdk/google";
 import { embed, embedMany } from "ai";
 import { z } from "zod";
+import { addSpeakerLabels, applySpeakerTimeline } from "@/lib/diarize";
 
 // ---------------------------------------------------------------------------
 // Clients
@@ -45,10 +46,18 @@ commitment and let downstream review decide its validity.
 Do NOT invent people, numbers, or facts that are completely absent from the
 transcript, but DO extract commitments that are implied or reported.
 
+Transcript lines are formatted "[MM:SS] SpeakerName: text". Use the speaker
+label to resolve first-person pronouns ("I", "me", "my") to that speaker's
+name when a line commits to something in first person — e.g. "[00:28] Ramesh:
+I will work on the dashboard." means owner is "Ramesh", not "the speaker".
+Never write "the speaker" or "I" as an owner in the extracted text — always
+substitute the resolved name from the speaker label.
+
 FOR EACH ITEM, PRODUCE:
 - type: "decision" or "action_item"
 - text: one self-contained sentence stating the commitment as a fact
-- owner: person responsible, as named. OMIT if none stated.
+- owner: person responsible, as named (resolved from the speaker label if the
+  commitment was first-person). OMIT if truly no speaker label or name exists.
 - deadline: { "raw": "..." } — as spoken. OMIT resolved_iso unless explicit year.
 - dependency_hints: array of blocking phrases. OMIT if none.
 - supersedes_hint: for decisions reversing earlier ones. OMIT otherwise.
@@ -824,7 +833,11 @@ After ALL seven tools complete successfully, respond with ONLY this JSON (no pro
 // ---------------------------------------------------------------------------
 // Audio transcription via Groq Whisper (verbose_json for timestamps)
 // ---------------------------------------------------------------------------
-async function transcribeAudio(file: File): Promise<string> {
+async function transcribeAudio(
+  file: File,
+  participantNames?: string[],
+  speakerTimeline?: Array<{ atMs: number; name: string }>
+): Promise<string> {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) throw new Error("GROQ_API_KEY is not configured");
 
@@ -847,15 +860,21 @@ async function transcribeAudio(file: File): Promise<string> {
 
   const data = await res.json();
 
-  // Format segments as [MM:SS] text lines for downstream chunking
+  // Format segments as [MM:SS] text lines for downstream chunking. Whisper
+  // gives no speaker identity. If the room captured a live Jitsi
+  // dominantSpeakerChanged timeline, use that for a free, deterministic
+  // lookup — otherwise fall back to asking Gemini to guess from the audio
+  // (falls back further to unlabeled lines if that call fails too).
   if (data.segments && Array.isArray(data.segments) && data.segments.length > 0) {
-    return data.segments
-      .map((seg: any) => {
-        const mins = Math.floor((seg.start ?? 0) / 60);
-        const secs = Math.floor((seg.start ?? 0) % 60);
-        return `[${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}] ${String(seg.text ?? "").trim()}`;
-      })
-      .join("\n");
+    const segments = data.segments.map((seg: { start?: number; text?: string }) => ({
+      start: seg.start ?? 0,
+      text: String(seg.text ?? "").trim(),
+    }));
+    if (speakerTimeline && speakerTimeline.length > 0) {
+      return applySpeakerTimeline(segments, speakerTimeline);
+    }
+    const audioBuffer = await file.arrayBuffer();
+    return addSpeakerLabels(audioBuffer, file.type, segments, participantNames);
   }
 
   return data.text ?? "";
@@ -884,7 +903,39 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "File exceeds Groq's 25 MB limit" }, { status: 413 });
       }
 
-      transcript = await transcribeAudio(file);
+      // Optional roster of display names seen in the Jitsi room, passed by
+      // /rooms/[id] so diarization matches voices to real names instead of
+      // guessing them from what's said in the audio.
+      let participantNames: string[] | undefined;
+      const participantsRaw = formData.get("participants");
+      if (typeof participantsRaw === "string") {
+        try {
+          const parsed = JSON.parse(participantsRaw);
+          if (Array.isArray(parsed)) participantNames = parsed.filter((n) => typeof n === "string");
+        } catch {
+          /* ignore malformed roster — diarization falls back to voice-only guessing */
+        }
+      }
+
+      // Optional live Jitsi dominantSpeakerChanged timeline, timestamped on
+      // the recording's own clock — lets diarization label segments by direct
+      // lookup instead of a Gemini guess (and costs zero model calls).
+      let speakerTimeline: Array<{ atMs: number; name: string }> | undefined;
+      const timelineRaw = formData.get("speakerTimeline");
+      if (typeof timelineRaw === "string") {
+        try {
+          const parsed = JSON.parse(timelineRaw);
+          if (Array.isArray(parsed)) {
+            speakerTimeline = parsed.filter(
+              (e) => e && typeof e.atMs === "number" && typeof e.name === "string"
+            );
+          }
+        } catch {
+          /* ignore malformed timeline — diarization falls back to Gemini/voice guessing */
+        }
+      }
+
+      transcript = await transcribeAudio(file, participantNames, speakerTimeline);
     } else {
       // JSON text-paste path
       const body = await req.json();

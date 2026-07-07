@@ -21,7 +21,15 @@
       "Bash(curl -s \"http://localhost:3000/api/reports/weekly?project_id=a1b2c3d4-0000-0000-0000-000000000001\")",
       "Bash(curl -s \"http://localhost:3000/api/followups/queue\")",
       "Bash(curl -s \"http://localhost:3000/api/dashboard/insights?project_id=a1b2c3d4-0000-0000-0000-000000000001\")",
-      "Bash(curl -s \"http://localhost:3000/api/projects\")"
+      "Bash(curl -s \"http://localhost:3000/api/projects\")",
+      "Bash(node \"C:\\\\Users\\\\SAMIKSHA\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\d--samiksha-work-Helm\\\\9994751c-b9b1-4c6e-8f14-91ac28580205\\\\scratchpad\\\\check-user.mjs\")",
+      "Bash(node _tmp-check-user.mjs)",
+      "Bash(node _tmp-fix-user.mjs)",
+      "Bash(node _tmp-check2.mjs)",
+      "Bash(node -e \"console.log\\(require\\('./node_modules/ai/package.json'\\).version\\)\")",
+      "Bash(node -e \"console.log\\(require\\('./node_modules/@ai-sdk/google/package.json'\\).version\\)\")",
+      "Bash(node -e \"console.log\\(require\\('./node_modules/@jitsi/react-sdk/package.json'\\).version\\)\")",
+      "Bash(npx eslint *)"
     ]
   }
 }

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { addSpeakerLabels } from "@/lib/diarize";
 
 const GROQ_URL = "https://api.groq.com/openai/v1/audio/transcriptions";
 const ALLOWED_TYPES = new Set(["audio/mpeg", "audio/wav", "audio/mp4", "audio/webm", "audio/x-m4a"]);
@@ -60,13 +61,15 @@ export async function POST(req: NextRequest) {
   // Format as [MM:SS] text lines so the pipeline can chunk by timestamp
   let transcript: string;
   if (result.segments && Array.isArray(result.segments) && result.segments.length > 0) {
-    transcript = result.segments
-      .map((seg: any) => {
-        const mins = Math.floor((seg.start ?? 0) / 60);
-        const secs = Math.floor((seg.start ?? 0) % 60);
-        return `[${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}] ${String(seg.text ?? "").trim()}`;
-      })
-      .join("\n");
+    const segments = result.segments.map((seg: { start?: number; text?: string }) => ({
+      start: seg.start ?? 0,
+      text: String(seg.text ?? "").trim(),
+    }));
+    // Whisper gives no speaker identity — ask Gemini to listen to the same
+    // audio and label who's speaking per segment (falls back to unlabeled
+    // [MM:SS] lines if that call fails, so transcription never blocks on it).
+    const audioBuffer = await file.arrayBuffer();
+    transcript = await addSpeakerLabels(audioBuffer, file.type, segments);
   } else {
     transcript = result.text ?? "";
   }
