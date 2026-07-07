@@ -1,6 +1,7 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { google } from "@ai-sdk/google";
+import { GEMINI_MODEL_NAME } from "@/lib/model";
 import { embed, generateText } from "ai";
 
 const supabase = createClient(
@@ -126,7 +127,7 @@ export async function POST(
     }
 
     const { text: brief } = await generateText({
-      model: google("gemini-2.5-flash"),
+      model: google(GEMINI_MODEL_NAME),
       system: BRIEF_SYSTEM_PROMPT,
       prompt: `Project context (${sourcesCount} sources):\n\n${contextLines.join("\n")}`,
     });

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { google } from "@ai-sdk/google";
+import { GEMINI_MODEL_NAME } from "@/lib/model";
 import { embed, generateText } from "ai";
 
 const embeddingModel = google.textEmbeddingModel("gemini-embedding-001");
@@ -172,7 +173,7 @@ export async function POST(req: NextRequest) {
         .join("\n");
 
       const { text: answer } = await generateText({
-        model: google("gemini-2.5-flash"),
+        model: google(GEMINI_MODEL_NAME),
         system: KNOWLEDGE_ASSISTANT_PROMPT,
         prompt: `Context:\n${contextStr}\n\nQuestion: ${query}`,
       });

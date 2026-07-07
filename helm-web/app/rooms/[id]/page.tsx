@@ -101,17 +101,14 @@ export default function RoomPage() {
       const blob = await recorder.stop();
       if (blob) {
         try {
-          setProcessing("Transcribing & extracting items…");
+          setProcessing("Saving & transcribing the meeting…");
           const form = new FormData();
           form.append("file", blob, "meeting.webm");
           form.append("title", title);
-          if (participantsRef.current.length > 0) {
-            form.append("participants", JSON.stringify(participantsRef.current));
-          }
-          if (speakerTimelineRef.current.length > 0) {
-            form.append("speakerTimeline", JSON.stringify(speakerTimelineRef.current));
-          }
-          const res = await fetch("/api/pipeline", { method: "POST", body: form });
+          // Deterministic save: this endpoint ALWAYS creates the meeting + saves
+          // the transcript, then extracts items best-effort. The meeting shows up
+          // in Meetings even if extraction is thin.
+          const res = await fetch("/api/meetings/record", { method: "POST", body: form });
           const data = await res.json().catch(() => ({}));
           if (res.ok && data.meeting_id) {
             if (room?.id) {
@@ -125,9 +122,9 @@ export default function RoomPage() {
             router.push(`/meetings/${data.meeting_id}`);
             return;
           }
-          setProcessing(`Processing failed: ${data.error || "unknown error"}. Ending meeting.`);
+          setProcessing(`Save failed: ${data.error || "unknown error"}. Ending meeting.`);
         } catch {
-          setProcessing("Could not process the recording. Ending meeting.");
+          setProcessing("Could not save the recording. Ending meeting.");
         }
       }
     }
@@ -157,25 +154,40 @@ export default function RoomPage() {
               <span className="flex items-center gap-2 text-emerald-400">
                 <Radio size={15} className="animate-pulse" />
                 {recorder.mode === "full"
-                  ? "Recording everyone — auto-transcribed into items when you end the meeting."
-                  : "Recording (your mic) — auto-transcribed into items when you end the meeting."}
+                  ? "Recording everyone — auto-saved & transcribed when you end the meeting."
+                  : "Recording — auto-saved & transcribed when you end the meeting."}
+              </span>
+            ) : recorder.error ? (
+              <span className="flex items-center gap-2 text-amber-400">
+                {recorder.error} Allow microphone access, then retry.
               </span>
             ) : (
-              <span className="text-slate-300">
-                {recorder.error || "Starting recording…"}
-              </span>
+              <span className="text-slate-300">Starting recording…</span>
             )}
-            {recorder.mode !== "full" && (
-              <button
-                onClick={() => {
-                  speakerTimelineRef.current = [];
-                  recorder.start("full").catch(() => {});
-                }}
-                className="shrink-0 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
-              >
-                Capture everyone (share tab audio)
-              </button>
-            )}
+
+            <div className="flex shrink-0 items-center gap-2">
+              {/* Retry mic recording (no screen share needed) if auto-start was blocked. */}
+              {!recorder.recording && (
+                <button
+                  onClick={() => recorder.start("mic").catch(() => {})}
+                  className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
+                >
+                  {recorder.error ? "Retry recording" : "Enable recording"}
+                </button>
+              )}
+              {/* Optional upgrade: capture every participant via shared tab audio. */}
+              {recorder.mode !== "full" && (
+                <button
+                  onClick={() => {
+                    speakerTimelineRef.current = [];
+                    recorder.start("full").catch(() => {});
+                  }}
+                  className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-800"
+                >
+                  Capture everyone
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}

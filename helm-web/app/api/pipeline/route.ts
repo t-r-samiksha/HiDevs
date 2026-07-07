@@ -9,6 +9,7 @@ import { z } from "zod";
 import { addSpeakerLabels, applySpeakerTimeline } from "@/lib/diarize";
 import { ExtractionResultSchema } from "@/lib/mastra/schemas/item.schema";
 import { scoreExtraction } from "@/lib/mastra/scorers/extraction-scorers";
+import { MASTRA_GEMINI_MODEL } from "@/lib/model";
 
 // ---------------------------------------------------------------------------
 // Clients
@@ -38,7 +39,7 @@ const embeddingModel = google.textEmbeddingModel("gemini-embedding-001");
 const extractionAgent = new Agent({
   id: "extraction-agent",
   name: "Extraction Agent",
-  model: "google/gemini-2.5-flash",
+  model: MASTRA_GEMINI_MODEL,
   instructions: `
 You read a meeting transcript and extract every DECISION and ACTION ITEM —
 including ones that are uncertain, secondhand, or hedged ("I think someone
@@ -309,11 +310,13 @@ const runExtractionTool = createTool({
         ]);
         break;
       } catch (err: any) {
-        const isThrottle =
-          err?.message?.includes("high demand") ||
-          err?.message?.includes("429") ||
-          err?.status === 429;
-        if (!isThrottle || attempt >= RETRY_DELAYS.length) throw err;
+        const msg = String(err?.message || "");
+        const isThrottle = msg.includes("high demand") || msg.includes("429") || err?.status === 429;
+        // A daily free-tier quota exhaustion won't recover in seconds — don't
+        // burn minutes retrying it; fail fast so the caller degrades gracefully.
+        const isDailyQuota =
+          msg.includes("free_tier") || msg.includes("PerDay") || msg.includes("RESOURCE_EXHAUSTED");
+        if (!isThrottle || isDailyQuota || attempt >= RETRY_DELAYS.length) throw err;
         await new Promise((r) => setTimeout(r, RETRY_DELAYS[attempt]));
       }
     }
@@ -832,7 +835,7 @@ const detectContradictionsTool = createTool({
 const supervisorAgent = new Agent({
   id: "supervisor-agent",
   name: "Helm Pipeline Supervisor",
-  model: "google/gemini-2.5-flash",
+  model: MASTRA_GEMINI_MODEL,
   instructions: `You are the Helm Pipeline Supervisor. The raw transcript has already passed an injection-safety check before reaching you. When given a JSON object with "title" and "transcript" fields, call the tools in EXACTLY this order:
 
 1. run-extraction — pass the transcript to extract all decisions and action items.

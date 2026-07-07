@@ -1,13 +1,13 @@
 import { Agent } from "@mastra/core/agent";
+import { MASTRA_GEMINI_MODEL } from "@/lib/model";
 
 /**
  * Drafts short professional follow-up nudges for overdue/at-risk items.
- * gemini-2.5-flash only (free tier); never gemini-2.5-pro.
  */
 export const followupAgent = new Agent({
   id: "followup-agent",
   name: "Follow-up Agent",
-  model: "google/gemini-2.5-flash",
+  model: MASTRA_GEMINI_MODEL,
   instructions: `You draft short, professional follow-up messages for overdue or at-risk tasks.
 
 You will receive structured context about the item. Your job is to write a

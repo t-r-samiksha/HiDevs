@@ -1,5 +1,6 @@
 import { generateText } from "ai";
 import { google } from "@ai-sdk/google";
+import { GEMINI_MODEL_NAME } from "@/lib/model";
 
 function formatTime(seconds: number): string {
   const mins = Math.floor(seconds / 60);
@@ -73,7 +74,7 @@ ${numbered}`;
 
   try {
     const { text } = await generateText({
-      model: google("gemini-2.5-flash"),
+      model: google(GEMINI_MODEL_NAME),
       // Diarization is a nice-to-have fallback, not core pipeline output —
       // don't burn ~20s retrying against a 429. Most quota exhaustion here is
       // a per-day cap (not per-minute), so retrying within seconds can't

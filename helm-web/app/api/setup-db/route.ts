@@ -19,6 +19,9 @@ ALTER TABLE items ADD COLUMN IF NOT EXISTS enkrypt_checks JSONB;
 -- can reconstruct and resume the suspended run from storage even after a restart.
 ALTER TABLE escalation_logs ADD COLUMN IF NOT EXISTS run_id TEXT;
 
+-- Editable project description shown/edited on the Settings page.
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS description TEXT;
+
 CREATE TABLE IF NOT EXISTS rooms (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID REFERENCES projects(id),

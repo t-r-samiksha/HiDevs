@@ -1,14 +1,14 @@
 import { Agent } from "@mastra/core/agent";
+import { MASTRA_GEMINI_MODEL } from "@/lib/model";
 
 /**
  * Extraction agent used by the eval runner (and registered in the Mastra
  * instance). Produces the ExtractionResultSchema shape: { items: [...] }.
- * gemini-2.5-flash only (free tier).
  */
 export const extractionAgent = new Agent({
   id: "extraction-agent",
   name: "Extraction Agent",
-  model: "google/gemini-2.5-flash",
+  model: MASTRA_GEMINI_MODEL,
   instructions: `You read a meeting transcript and extract every DECISION and ACTION ITEM.
 
 Return ONLY JSON of the form:

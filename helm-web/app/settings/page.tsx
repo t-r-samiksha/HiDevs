@@ -31,13 +31,26 @@ export default function SettingsPage() {
     setLoading(true);
     setLoadError(null);
     try {
-      const [projRes, usersRes] = await Promise.all([
-        supabase.from("projects").select("id, name, description").limit(1),
-        supabase.from("users").select("id, name, email, role").order("name"),
-      ]);
-      if (projRes.error) throw new Error(projRes.error.message);
+      const usersRes = await supabase.from("users").select("id, name, email, role").order("name");
       if (usersRes.error) throw new Error(usersRes.error.message);
-      const proj = (projRes.data as Project[] | null)?.[0] ?? null;
+
+      // The `description` column may not exist in this DB yet — fall back to the
+      // columns that always exist instead of erroring the whole page.
+      let projErr: string | null = null;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let projRow: any = null;
+      const withDesc = await supabase.from("projects").select("id, name, description").limit(1);
+      if (withDesc.error && /description/.test(withDesc.error.message)) {
+        const basic = await supabase.from("projects").select("id, name").limit(1);
+        projRow = basic.data?.[0] ?? null;
+        projErr = basic.error?.message ?? null;
+      } else {
+        projRow = withDesc.data?.[0] ?? null;
+        projErr = withDesc.error?.message ?? null;
+      }
+      if (projErr) throw new Error(projErr);
+
+      const proj = projRow ? ({ description: null, ...projRow } as Project) : null;
       setProject(proj);
       setName(proj?.name ?? "");
       setDescription(proj?.description ?? "");
@@ -61,10 +74,14 @@ export default function SettingsPage() {
   async function saveProject() {
     if (!project) return;
     setSavingProject(true);
-    const { error } = await supabase
+    let { error } = await supabase
       .from("projects")
       .update({ name: name.trim(), description: description.trim() || null })
       .eq("id", project.id);
+    // Retry without description if that column hasn't been added to the DB yet.
+    if (error && /description/.test(error.message)) {
+      ({ error } = await supabase.from("projects").update({ name: name.trim() }).eq("id", project.id));
+    }
     setSavingProject(false);
     flash(error ? `Error: ${error.message}` : "Project saved");
   }
