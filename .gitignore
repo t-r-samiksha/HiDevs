@@ -4,3 +4,8 @@
 *.duckdb
 *.duckdb.wal
 *.duckdb.tmp
+
+# Mastra LibSQL run/observability store (generated at runtime).
+*.db
+*.db-shm
+*.db-wal

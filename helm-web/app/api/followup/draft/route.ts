@@ -1,25 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { Agent } from "@mastra/core/agent";
+import { mastra, followupRuns } from "@/lib/mastra";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-const ENKRYPT_KEY = process.env.ENKRYPT_API_KEY!;
+function daysBetween(a: string, b: string): number {
+  return Math.round((new Date(b).getTime() - new Date(a).getTime()) / (1000 * 60 * 60 * 24));
+}
 
-const followupAgent = new Agent({
-  id: "followup-agent",
-  name: "Follow-up Agent",
-  model: "google/gemini-2.5-flash",
-  instructions: `
-You draft short, professional follow-up messages for overdue or at-risk tasks.
-Write a 2-3 sentence nudge that is friendly but clear about urgency.
-Address the owner by name. Output ONLY the message text, nothing else.
-`,
-});
-
+// POST /api/followup/draft — runs the real Mastra followupHitlWorkflow: the
+// draft + Enkrypt policy steps execute, then the workflow SUSPENDS at the
+// human-approval step. The suspended run is kept in memory (keyed by the
+// escalation_logs id) so /api/followup/resolve can resume() it.
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -32,32 +27,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "tier must be 1, 2, or 3" }, { status: 400 });
     }
 
-    const { data: item, error } = await supabase
-      .from("items")
-      .select("*")
-      .eq("id", item_id)
-      .single();
-
+    const { data: item, error } = await supabase.from("items").select("*").eq("id", item_id).single();
     if (error || !item) {
       return NextResponse.json({ error: "Item not found" }, { status: 404 });
     }
 
-    // ── Tier 3: flag immediately, no draft ───────────────────────────────────
+    // ── Tier 3: flag immediately, no draft / no workflow ─────────────────────
     if (tier === 3) {
       const { data: log, error: logErr } = await supabase
         .from("escalation_logs")
-        .insert({
-          item_id: item.id,
-          tier: 3,
-          drafted_text: null,
-          status: "flagged",
-          policy_passed: null,
-        })
+        .insert({ item_id: item.id, tier: 3, drafted_text: null, status: "flagged", policy_passed: null })
         .select()
         .single();
-
       if (logErr) throw new Error(logErr.message);
-
       return NextResponse.json({
         escalation_id: log.id,
         tier: 3,
@@ -68,7 +50,7 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // ── Tier 2: look up manager ───────────────────────────────────────────────
+    // ── Tier 2: look up the owner's manager to cc ────────────────────────────
     let managerName: string | null = null;
     if (tier === 2 && item.owner) {
       const { data: ownerUser } = await supabase
@@ -76,7 +58,6 @@ export async function POST(req: NextRequest) {
         .select("manager_id, name")
         .eq("id", item.owner)
         .single();
-
       if (ownerUser?.manager_id) {
         const { data: manager } = await supabase
           .from("users")
@@ -87,88 +68,72 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // ── Draft via agent ───────────────────────────────────────────────────────
-    let prompt: string;
-    if (tier === 2) {
-      const ccLine = managerName
-        ? `Looping in ${managerName} for visibility.`
-        : "Escalating for visibility.";
-      prompt = `Draft a Tier 2 escalation follow-up for this task:
-- Task: "${item.text}"
-- Owner: ${item.owner || "the assignee"}
-- Deadline: ${item.deadline_raw || "not specified"}
-- Status: ${item.status}
+    const today = new Date().toISOString().split("T")[0];
+    const daysOverdue = item.deadline_iso ? Math.max(0, daysBetween(item.deadline_iso, today)) : 0;
 
-Write a firm, professional message in this style:
-"Hi ${item.owner || "team"}, this is a follow-up regarding '${item.text.slice(0, 60)}' which was due ${item.deadline_raw || "recently"}. ${ccLine}"
+    // ── Run the HITL workflow: draft → policy check → SUSPEND ─────────────────
+    const run = await mastra.getWorkflow("followupHitlWorkflow").createRun();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = (await run.start({
+      inputData: {
+        item_id: item.id,
+        item_text: item.text,
+        owner: item.owner || "the assignee",
+        deadline: item.deadline_raw || item.deadline_iso || "not specified",
+        days_overdue: daysOverdue,
+        tier,
+        manager_cc: managerName || undefined,
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    })) as any;
 
-Output ONLY the message text.`;
-    } else {
-      prompt = `Draft a Tier 1 follow-up for this task:
-- Task: "${item.text}"
-- Owner: ${item.owner || "the assignee"}
-- Deadline: ${item.deadline_raw || "not specified"}
-- Status: ${item.status}
-Keep it gentle — this is the first nudge.`;
+    if (result.status === "failed") {
+      throw new Error(result.error?.message || "Follow-up workflow failed during draft/policy");
     }
 
-    const response = await followupAgent.generate([{ role: "user", content: prompt }]);
-    const draft = response.text;
+    const payload = result.suspendPayload ?? result.steps?.["human-approval"]?.suspendPayload ?? {};
+    const draft: string = payload.draft ?? "";
+    const policyPassed: boolean = payload.policy_passed ?? false;
 
-    // Enkrypt policy check
-    const enkryptRes = await fetch("https://api.enkryptai.com/guardrails/detect", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", apikey: ENKRYPT_KEY },
-      body: JSON.stringify({
-        text: draft,
-        detectors: { policy_violation: { enabled: true }, toxicity: { enabled: true } },
-      }),
-    });
-    const enkryptData = await enkryptRes.json();
-    const policyPassed =
-      (enkryptData.summary?.policy_violation ?? 0) === 0 &&
-      (enkryptData.summary?.toxicity ?? 0) === 0;
-
-    // Enkrypt Checkpoint 4 hard gate: a draft that fails the policy/toxicity
-    // check never enters the approval queue — it's blocked here, not just
-    // flagged for a human to notice later.
+    // Enkrypt Checkpoint 4 hard gate — a draft that fails policy never enters
+    // the approval queue (and we drop the suspended run).
     if (!policyPassed) {
       return NextResponse.json(
-        {
-          error: "Follow-up draft failed policy check. Please revise manually.",
-          policy_passed: false,
-          draft,
-        },
+        { error: "Follow-up draft failed policy check. Please revise manually.", policy_passed: false, draft },
         { status: 422 }
       );
     }
 
-    const { data: log, error: logErr } = await supabase
+    const logRow = { item_id: item.id, tier, drafted_text: draft, status: "pending", policy_passed: true };
+    let { data: log, error: logErr } = await supabase
       .from("escalation_logs")
-      .insert({
-        item_id: item.id,
-        tier,
-        drafted_text: draft,
-        status: "pending",
-        policy_passed: policyPassed,
-      })
+      .insert({ ...logRow, run_id: run.runId })
       .select()
       .single();
-
+    // Tolerate DBs where the run_id column hasn't been added yet.
+    if (logErr && /run_id/.test(logErr.message)) {
+      ({ data: log, error: logErr } = await supabase.from("escalation_logs").insert(logRow).select().single());
+    }
     if (logErr) throw new Error(logErr.message);
+
+    // Fast path: keep the suspended run in memory so resolve() can resume the
+    // exact HITL run. (resolve also reconstructs from storage by run_id.)
+    followupRuns.set(String(log.id), run);
 
     return NextResponse.json({
       escalation_id: log.id,
+      run_id: run.runId,
       tier,
       draft,
-      policy_passed: policyPassed,
+      policy_passed: true,
       needs_attention: false,
       owner: item.owner,
       item_text: item.text,
       ...(tier === 2 && managerName ? { manager_cc: managerName } : {}),
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "unknown error";
     console.error("Follow-up draft error:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

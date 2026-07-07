@@ -15,6 +15,10 @@ const SETUP_SQL = `
 -- data instead of guessing from the single trust_score number.
 ALTER TABLE items ADD COLUMN IF NOT EXISTS enkrypt_checks JSONB;
 
+-- Persist the Mastra HITL workflow run id on each escalation so /api/followup/resolve
+-- can reconstruct and resume the suspended run from storage even after a restart.
+ALTER TABLE escalation_logs ADD COLUMN IF NOT EXISTS run_id TEXT;
+
 CREATE TABLE IF NOT EXISTS rooms (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID REFERENCES projects(id),

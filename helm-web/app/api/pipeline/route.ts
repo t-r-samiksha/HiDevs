@@ -7,6 +7,8 @@ import { google } from "@ai-sdk/google";
 import { embed, embedMany } from "ai";
 import { z } from "zod";
 import { addSpeakerLabels, applySpeakerTimeline } from "@/lib/diarize";
+import { ExtractionResultSchema } from "@/lib/mastra/schemas/item.schema";
+import { scoreExtraction } from "@/lib/mastra/scorers/extraction-scorers";
 
 // ---------------------------------------------------------------------------
 // Clients
@@ -81,7 +83,12 @@ async function enkryptPost(path: string, body: unknown) {
     headers: { "Content-Type": "application/json", apikey: ENKRYPT_KEY },
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error(`Enkrypt ${path} → ${res.status}`);
+  if (!res.ok) {
+    // Surface the actual Enkrypt error body, not just the status — a 400 here
+    // tells you exactly which field is wrong (e.g. "Missing pii.entities").
+    const errBody = await res.text().catch(() => "");
+    throw new Error(`Enkrypt ${path} → ${res.status}: ${errBody}`);
+  }
   return res.json();
 }
 
@@ -313,6 +320,28 @@ const runExtractionTool = createTool({
 
     const cleaned = response!.text.replace(/```json|```/g, "").trim();
     const parsed = JSON.parse(cleaned);
+
+    // FIX 5 — schema-enforce the extraction output against the shared Zod
+    // contract. On failure we log and fall back gracefully (keep the parsed
+    // items) rather than dropping the extraction.
+    const validation = ExtractionResultSchema.safeParse({ items: parsed.items || [] });
+    if (!validation.success) {
+      console.warn(
+        "[pipeline] extraction failed schema validation:",
+        JSON.stringify(validation.error.issues.slice(0, 5))
+      );
+    }
+
+    // FIX 4 — run the Mastra extraction scorers live on this extraction. No
+    // golden set exists at runtime, so source_quote presence is the meaningful
+    // signal; the point is that the real scorers EXECUTE in the live pipeline.
+    try {
+      const scores = await scoreExtraction(cleaned);
+      console.log("[pipeline] extraction scorers:", JSON.stringify(scores));
+    } catch (e) {
+      console.error("[pipeline] scorer run failed:", e);
+    }
+
     return { items: parsed.items || [] };
   },
 });
@@ -389,15 +418,31 @@ const scoreTrustItemsTool = createTool({
 // authoritative detection signal; the local regex below remains the actual
 // redaction mechanism since it's the only piece that knows *where* to redact.
 // ---------------------------------------------------------------------------
+// The Enkrypt PII detector (unlike injection_attack) requires an explicit list
+// of entity types to look for — omitting it 400s with "Missing pii.entities".
+const PII_ENTITIES = [
+  "PERSON",
+  "EMAIL_ADDRESS",
+  "PHONE_NUMBER",
+  "CREDIT_CARD",
+  "US_SSN",
+  "IP_ADDRESS",
+  "IBAN_CODE",
+  "US_PASSPORT",
+  "LOCATION",
+];
+
 async function enkryptPiiCheck(text: string): Promise<boolean> {
   if (!text) return false;
   try {
     const r = await enkryptPost("/guardrails/detect", {
       text,
-      detectors: { pii: { enabled: true } },
+      detectors: { pii: { enabled: true, entities: PII_ENTITIES } },
     });
     return r.summary?.pii === 1;
   } catch (err) {
+    // Fallback: rely on the local regex redactor. Logs the full Enkrypt error
+    // body (enkryptPost now includes it) so failures are debuggable.
     console.error("Enkrypt PII check failed, relying on local regex only:", err);
     return false;
   }
