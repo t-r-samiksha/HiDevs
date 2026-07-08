@@ -1,8 +1,14 @@
 import { NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
 
-// Hardcoded agent prompt registry — demonstrates prompt versioning for the hackathon.
-// In production these would be stored in a database and hot-reloaded into the agent runtime.
-const AGENT_PROMPTS = [
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
+
+// Built-in default prompts. Persisted overrides in the `agent_prompts` table
+// take precedence (see GET). Exported so the [agentId] routes share the list.
+export const AGENT_PROMPTS = [
   {
     agentId: "extractionAgent",
     name: "Extraction Agent",
@@ -75,7 +81,29 @@ Return: { "brief": "...", "generated_at": "ISO date", "sources_count": N }`,
   },
 ];
 
-// GET /api/admin/prompts
+// GET /api/admin/prompts — effective prompts = defaults merged with persisted
+// overrides from the agent_prompts table.
 export async function GET() {
-  return NextResponse.json({ agents: AGENT_PROMPTS });
+  const { data: overrides, error } = await supabase
+    .from("agent_prompts")
+    .select("agent_id, prompt, updated_at");
+
+  // If the table doesn't exist yet, just serve the defaults.
+  const map = new Map(
+    error ? [] : (overrides || []).map((o) => [o.agent_id, o] as const)
+  );
+
+  const agents = AGENT_PROMPTS.map((a) => {
+    const o = map.get(a.agentId);
+    return {
+      agentId: a.agentId,
+      name: a.name,
+      prompt: o?.prompt ?? a.prompt,
+      default_prompt: a.prompt,
+      is_overridden: !!o,
+      updated_at: o?.updated_at ?? null,
+    };
+  });
+
+  return NextResponse.json({ agents });
 }

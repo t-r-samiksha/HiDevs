@@ -22,6 +22,15 @@ ALTER TABLE escalation_logs ADD COLUMN IF NOT EXISTS run_id TEXT;
 -- Editable project description shown/edited on the Settings page.
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS description TEXT;
 
+-- Persisted agent prompt overrides for the Intelligence settings prompt editor.
+-- A missing row means "use the built-in default"; a row overrides it.
+CREATE TABLE IF NOT EXISTS agent_prompts (
+  agent_id TEXT PRIMARY KEY,
+  name TEXT,
+  prompt TEXT NOT NULL,
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS rooms (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID REFERENCES projects(id),

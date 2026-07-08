@@ -32,14 +32,43 @@ function summarize(v: unknown): string {
   return String(v);
 }
 
-const DEFAULT_PROMPT = "You read a meeting transcript and extract every DECISION and ACTION ITEM…";
+type AgentPrompt = {
+  agentId: string;
+  name: string;
+  prompt: string;
+  default_prompt: string;
+  is_overridden: boolean;
+};
 
 export default function IntelligencePage() {
   const [atRiskDays, setAtRiskDays] = useState(3);
   const [silenceDays, setSilenceDays] = useState(5);
   const [speed, setSpeed] = useState<"conservative" | "balanced" | "aggressive">("balanced");
-  const [prompt, setPrompt] = useState(DEFAULT_PROMPT);
   const [audit, setAudit] = useState<AuditEntry[]>([]);
+
+  // Real per-agent prompt registry, persisted via /api/admin/prompts.
+  const [agents, setAgents] = useState<AgentPrompt[]>([]);
+  const [selectedId, setSelectedId] = useState("");
+  const [promptText, setPromptText] = useState("");
+  const [savingPrompt, setSavingPrompt] = useState(false);
+  const [promptStatus, setPromptStatus] = useState<string | null>(null);
+
+  const selectedAgent = agents.find((a) => a.agentId === selectedId) ?? null;
+
+  async function loadPrompts() {
+    try {
+      const res = await fetch("/api/admin/prompts");
+      const data = await res.json();
+      const list: AgentPrompt[] = data.agents ?? [];
+      setAgents(list);
+      if (list[0]) {
+        setSelectedId((prev) => prev || list[0].agentId);
+        setPromptText((prev) => prev || list[0].prompt);
+      }
+    } catch {
+      /* ignore */
+    }
+  }
 
   useEffect(() => {
     (async () => {
@@ -59,7 +88,60 @@ export default function IntelligencePage() {
         /* ignore */
       }
     })();
+    loadPrompts();
   }, []);
+
+  function selectAgent(id: string) {
+    setSelectedId(id);
+    setPromptText(agents.find((a) => a.agentId === id)?.prompt ?? "");
+    setPromptStatus(null);
+  }
+
+  async function savePrompt() {
+    if (!selectedId) return;
+    setSavingPrompt(true);
+    setPromptStatus(null);
+    try {
+      const res = await fetch(`/api/admin/prompts/${selectedId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: promptText }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setAgents((prev) => prev.map((a) => (a.agentId === selectedId ? { ...a, prompt: promptText, is_overridden: true } : a)));
+        setPromptStatus("Saved");
+      } else {
+        setPromptStatus(data.error || "Save failed");
+      }
+    } catch {
+      setPromptStatus("Save failed");
+    } finally {
+      setSavingPrompt(false);
+    }
+  }
+
+  async function restorePrompt() {
+    if (!selectedId) return;
+    setSavingPrompt(true);
+    setPromptStatus(null);
+    try {
+      const res = await fetch(`/api/admin/prompts/${selectedId}`, { method: "POST" });
+      const data = await res.json();
+      if (res.ok) {
+        const def = data.prompt ?? selectedAgent?.default_prompt ?? "";
+        setPromptText(def);
+        setAgents((prev) => prev.map((a) => (a.agentId === selectedId ? { ...a, prompt: def, is_overridden: false } : a)));
+        setPromptStatus("Restored default");
+      } else {
+        setPromptStatus(data.error || "Restore failed");
+      }
+    } catch {
+      setPromptStatus("Restore failed");
+    } finally {
+      setSavingPrompt(false);
+    }
+  }
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-6 md:px-6">
@@ -68,11 +150,8 @@ export default function IntelligencePage() {
       </Link>
       <h1 className="mb-1 text-xl font-semibold text-white">Intelligence</h1>
       <p className="mb-6 text-sm text-slate-400">
-        Tune the adaptive risk thresholds and extraction prompts.
+        Tune the adaptive risk thresholds and edit agent prompts.
       </p>
-      <div className="mb-6 rounded-lg border border-amber-800 bg-amber-950/60 px-3 py-2 text-xs text-amber-300">
-        Sample UI — controls persist once Member 1&apos;s adaptive learning APIs are live.
-      </div>
 
       {/* Thresholds */}
       <section className="mb-6 rounded-2xl border border-slate-800 bg-slate-900 p-5">
@@ -97,8 +176,19 @@ export default function IntelligencePage() {
         </div>
       </section>
 
-      {/* Prompt editor */}
-      <PromptEditor value={prompt} onChange={setPrompt} onRestore={() => setPrompt(DEFAULT_PROMPT)} />
+      {/* Prompt editor — real, persisted per-agent overrides */}
+      <PromptEditor
+        agents={agents.map((a) => ({ agentId: a.agentId, name: a.name }))}
+        selectedId={selectedId}
+        onSelect={selectAgent}
+        value={promptText}
+        onChange={setPromptText}
+        onSave={savePrompt}
+        onRestore={restorePrompt}
+        saving={savingPrompt}
+        isOverridden={!!selectedAgent?.is_overridden}
+        status={promptStatus}
+      />
 
       {/* Audit log */}
       <LearningDashboard entries={audit} />
