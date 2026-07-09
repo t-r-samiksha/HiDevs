@@ -9,7 +9,9 @@ import { z } from "zod";
 import { addSpeakerLabels, applySpeakerTimeline } from "@/lib/diarize";
 import { ExtractionResultSchema } from "@/lib/mastra/schemas/item.schema";
 import { scoreExtraction } from "@/lib/mastra/scorers/extraction-scorers";
-import { MASTRA_GEMINI_MODEL } from "@/lib/model";
+import { MASTRA_GEMINI_MODEL, GEMINI_MODEL_NAME } from "@/lib/model";
+import { withLLMTrace } from "@/lib/observability";
+import { checkRateLimit, sanitizeInput } from "@/lib/security";
 
 // ---------------------------------------------------------------------------
 // Clients
@@ -305,9 +307,10 @@ const runExtractionTool = createTool({
 
     for (let attempt = 0; ; attempt++) {
       try {
-        response = await extractionAgent.generate([
-          { role: "user", content: inputData.transcript },
-        ]);
+        response = await withLLMTrace(
+          { model: GEMINI_MODEL_NAME, endpoint: "/api/pipeline", label: "pipeline-extraction" },
+          () => extractionAgent.generate([{ role: "user", content: inputData.transcript }])
+        );
         break;
       } catch (err: any) {
         const msg = String(err?.message || "");
@@ -591,10 +594,10 @@ const persistPipelineTool = createTool({
       const textsToEmbed = embeddableItems.map(
         (it) => `[${it.type}] ${it.text}${it.owner ? ` (owner: ${it.owner})` : ""}`
       );
-      const { embeddings } = await embedMany({
-        model: embeddingModel,
-        values: textsToEmbed,
-      });
+      const { embeddings } = await withLLMTrace(
+        { model: "gemini-embedding-001", endpoint: "/api/pipeline", label: "pipeline-embedding" },
+        () => embedMany({ model: embeddingModel, values: textsToEmbed })
+      );
       // Include project_id in payload so dependency resolution can filter by it
       const metadata = embeddableItems.map((it) => ({
         item_id: it.id,
@@ -653,10 +656,10 @@ const embedTranscriptChunksTool = createTool({
       // Collection already exists — fine
     }
 
-    const { embeddings } = await embedMany({
-      model: embeddingModel,
-      values: chunks.map((c) => c.text),
-    });
+    const { embeddings } = await withLLMTrace(
+      { model: "gemini-embedding-001", endpoint: "/api/pipeline", label: "pipeline-chunk-embedding" },
+      () => embedMany({ model: embeddingModel, values: chunks.map((c) => c.text) })
+    );
 
     const metadata = chunks.map((chunk, i) => ({
       chunk_text: chunk.text,
@@ -933,6 +936,16 @@ async function transcribeAudio(
 // ---------------------------------------------------------------------------
 export async function POST(req: NextRequest) {
   try {
+    // Rate limit: max 10 pipeline runs per minute per client (this is the most
+    // expensive endpoint). Non-restructuring guard at the very top.
+    const clientIp = req.headers.get("x-forwarded-for") || "unknown";
+    if (!checkRateLimit(`pipeline:${clientIp}`, 10, 60_000)) {
+      return NextResponse.json(
+        { error: "Rate limit exceeded. Max 10 pipeline runs per minute." },
+        { status: 429 }
+      );
+    }
+
     let transcript: string;
     let title: string;
 
@@ -983,7 +996,10 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      transcript = await transcribeAudio(file, participantNames, speakerTimeline);
+      transcript = await withLLMTrace(
+        { model: "whisper-large-v3", endpoint: "/api/pipeline", label: "pipeline-transcription" },
+        () => transcribeAudio(file, participantNames, speakerTimeline)
+      );
     } else {
       // JSON text-paste path
       const body = await req.json();
@@ -997,6 +1013,11 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
+
+    // XSS-sanitize + length-cap the transcript before it reaches any LLM.
+    // Reassigns the same variable so every downstream call uses the sanitized
+    // value without renaming (no control-flow change).
+    transcript = sanitizeInput(transcript);
 
     // Enkrypt Checkpoint 1 — hard gate. Runs before the transcript is ever
     // passed to an LLM. A flagged transcript halts the pipeline here; nothing
@@ -1013,14 +1034,18 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const result = await supervisorAgent.generate(
-      [
-        {
-          role: "user",
-          content: JSON.stringify({ title, transcript }),
-        },
-      ],
-      { maxSteps: 12 }
+    const result = await withLLMTrace(
+      { model: GEMINI_MODEL_NAME, endpoint: "/api/pipeline", label: "pipeline-supervisor" },
+      () =>
+        supervisorAgent.generate(
+          [
+            {
+              role: "user",
+              content: JSON.stringify({ title, transcript }),
+            },
+          ],
+          { maxSteps: 12 }
+        )
     );
 
     const summary = JSON.parse(

@@ -12,6 +12,7 @@ import {
   ShieldCheck,
   MailCheck,
   Settings,
+  Activity,
   type LucideIcon,
 } from "lucide-react";
 
@@ -40,6 +41,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "Search", href: "/search", icon: Search },
   { label: "Review Queue", href: "/review", icon: ShieldCheck },
   { label: "Approval Queue", href: "/followups", icon: MailCheck },
+  { label: "Observability", href: "/observability", icon: Activity },
   { label: "Settings", href: "/settings", icon: Settings },
 ];
 

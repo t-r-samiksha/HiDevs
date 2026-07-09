@@ -14,7 +14,7 @@ const JitsiRoomEmbed = dynamic(() => import("../../components/rooms/JitsiRoomEmb
   loading: () => <div className="h-[70vh] animate-pulse rounded-xl bg-slate-900" />,
 });
 
-type RoomInfo = { id: string; created_by: string | null; meetings?: { title?: string } | null };
+type RoomInfo = { id: string; created_by: string | null; title?: string | null; meetings?: { title?: string } | null };
 
 export default function RoomPage() {
   const params = useParams();
@@ -74,6 +74,7 @@ export default function RoomPage() {
   const isHost = isHostLocal || (!!userId && !!room?.created_by && room.created_by === userId);
 
   const title =
+    room?.title ||
     room?.meetings?.title ||
     roomName.replace(/^helm-/, "").replace(/-[a-z0-9]{5}$/, "").replace(/-/g, " ") ||
     "Meeting";

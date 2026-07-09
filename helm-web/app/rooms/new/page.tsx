@@ -55,6 +55,7 @@ export default function NewRoomPage() {
           scheduled_time: startNow ? null : scheduledTime || null,
           status: startNow ? "live" : "scheduled",
           created_by: user?.id ?? null,
+          title: title.trim(),
         }),
       });
       if (res.ok) {

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { google } from "@ai-sdk/google";
 import { GEMINI_MODEL_NAME } from "@/lib/model";
 import { embed, generateText } from "ai";
+import { checkRateLimit, clientKey, sanitizeInput, securityHeaders } from "@/lib/security";
+import { withLLMTrace } from "@/lib/observability";
 
 const embeddingModel = google.textEmbeddingModel("gemini-embedding-001");
 
@@ -147,14 +149,24 @@ async function searchBothCollections(query: string, topK = 10) {
 // ---------------------------------------------------------------------------
 export async function POST(req: NextRequest) {
   try {
+    // Rate limit (60 req/min per client) — search + ask are LLM/Qdrant-heavy.
+    if (!checkRateLimit(`search:${clientKey(req)}`, 60, 60_000)) {
+      return NextResponse.json(
+        { error: "Rate limit exceeded. Try again shortly." },
+        { status: 429, headers: securityHeaders() }
+      );
+    }
+
     const body = await req.json();
-    const { query, mode: bodyMode } = body;
+    const { query: rawQuery, mode: bodyMode } = body;
     const urlMode = req.nextUrl.searchParams.get("mode");
     const mode = urlMode || bodyMode || "search";
 
-    if (!query || typeof query !== "string") {
+    if (!rawQuery || typeof rawQuery !== "string") {
       return NextResponse.json({ error: "query is required" }, { status: 400 });
     }
+    // XSS-sanitize + length-cap the user-supplied query.
+    const query = sanitizeInput(rawQuery);
 
     if (mode === "ask") {
       // ── Ask mode: retrieve top-5 context, generate a grounded answer ──────
@@ -172,18 +184,27 @@ export async function POST(req: NextRequest) {
         .map((r, i) => `[${i + 1}] [${r.meeting_title}] ${r.text}`)
         .join("\n");
 
-      const { text: answer } = await generateText({
-        model: google(GEMINI_MODEL_NAME),
-        system: KNOWLEDGE_ASSISTANT_PROMPT,
-        prompt: `Context:\n${contextStr}\n\nQuestion: ${query}`,
-      });
+      const prompt = `Context:\n${contextStr}\n\nQuestion: ${query}`;
+      // Trace the LLM call (latency, tokens, prompt hash, status).
+      const { text: answer } = await withLLMTrace(
+        { model: GEMINI_MODEL_NAME, endpoint: "/api/search[ask]", prompt },
+        () =>
+          generateText({
+            model: google(GEMINI_MODEL_NAME),
+            system: KNOWLEDGE_ASSISTANT_PROMPT,
+            prompt,
+          })
+      );
 
-      return NextResponse.json({ answer: answer.trim(), results: contextResults });
+      return NextResponse.json(
+        { answer: answer.trim(), results: contextResults },
+        { headers: securityHeaders() }
+      );
     }
 
     // ── Search mode: dual-collection search, return raw ranked results ───────
     const results = await searchBothCollections(query, 10);
-    return NextResponse.json({ answer: null, results });
+    return NextResponse.json({ answer: null, results }, { headers: securityHeaders() });
   } catch (error: any) {
     console.error("Search error:", error);
     return NextResponse.json(

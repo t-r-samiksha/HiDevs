@@ -3,8 +3,9 @@
 import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { CalendarDays } from "lucide-react";
+import { CalendarDays, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { PROJECT_ID } from "../lib/project";
 import type { CalendarEvent } from "../components/calendar/CalendarGrid";
 import ReminderBell from "../components/calendar/ReminderBell";
 import ReminderCreateModal from "../components/calendar/ReminderCreateModal";
@@ -20,6 +21,42 @@ export default function CalendarPage() {
   const [reminderItems, setReminderItems] = useState<{ id: string; text: string }[]>([]);
   const [showReminder, setShowReminder] = useState(false);
   const [reminderRefresh, setReminderRefresh] = useState(0);
+
+  // Schedule-meeting modal.
+  const [showSchedule, setShowSchedule] = useState(false);
+  const [schedTitle, setSchedTitle] = useState("");
+  const [schedTime, setSchedTime] = useState("");
+  const [scheduling, setScheduling] = useState(false);
+  const [schedError, setSchedError] = useState<string | null>(null);
+
+  async function scheduleMeeting() {
+    if (!schedTitle.trim()) return setSchedError("Meeting title is required.");
+    if (!schedTime) return setSchedError("Pick a date & time.");
+    setScheduling(true);
+    setSchedError(null);
+    try {
+      const res = await fetch("/api/rooms", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          project_id: PROJECT_ID,
+          scheduled_time: schedTime,
+          status: "scheduled",
+          title: schedTitle.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Could not schedule the meeting.");
+      setShowSchedule(false);
+      setSchedTitle("");
+      setSchedTime("");
+      await load();
+    } catch (e) {
+      setSchedError(e instanceof Error ? e.message : "Failed to schedule.");
+    } finally {
+      setScheduling(false);
+    }
+  }
 
   async function load() {
     // Deadlines come from real item data. Rooms are best-effort (Member 1's
@@ -52,21 +89,20 @@ export default function CalendarPage() {
 
     let roomEvents: CalendarEvent[] = [];
     try {
-      const roomsRes = await supabase
-        .from("rooms")
-        .select("id, jitsi_room_name, scheduled_time, meeting_id");
+      const roomsRes = await supabase.from("rooms").select("*");
       if (!roomsRes.error && roomsRes.data) {
         roomEvents = roomsRes.data
           .filter((r: { scheduled_time: string | null }) => r.scheduled_time)
-          .map((r: { id: string; jitsi_room_name: string | null; scheduled_time: string; meeting_id: string | null }) => {
+          .map((r: { id: string; jitsi_room_name: string | null; title?: string | null; scheduled_time: string; meeting_id: string | null }) => {
             const d = new Date(r.scheduled_time);
             return {
               id: r.id,
-              title: r.jitsi_room_name || "Meeting",
+              title: r.title || r.jitsi_room_name || "Meeting",
               start: d,
               end: new Date(d.getTime() + 60 * 60 * 1000),
               kind: "room" as const,
-              href: r.meeting_id ? `/meetings/${r.meeting_id}` : "/calendar",
+              // Click a scheduled meeting → join its room (or open the meeting if it ended).
+              href: r.meeting_id ? `/meetings/${r.meeting_id}` : `/rooms/${r.jitsi_room_name}`,
             };
           });
       }
@@ -101,14 +137,53 @@ export default function CalendarPage() {
           >
             + Reminder
           </button>
-          <Link
-            href="/rooms/new"
+          <button
+            onClick={() => { setSchedError(null); setShowSchedule(true); }}
             className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
           >
-            + New room
-          </Link>
+            + Schedule meeting
+          </button>
         </div>
       </div>
+
+      {showSchedule && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => !scheduling && setShowSchedule(false)}>
+          <div className="w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900 p-5" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-white">Schedule a meeting</h2>
+              <button onClick={() => !scheduling && setShowSchedule(false)} className="text-slate-500 hover:text-slate-300"><X size={18} /></button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-400">Meeting title</label>
+                <input
+                  value={schedTitle}
+                  onChange={(e) => setSchedTitle(e.target.value)}
+                  placeholder="Sprint planning"
+                  className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-400">Date & time</label>
+                <input
+                  type="datetime-local"
+                  value={schedTime}
+                  onChange={(e) => setSchedTime(e.target.value)}
+                  className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              {schedError && <p className="text-xs text-red-400">{schedError}</p>}
+              <button
+                onClick={scheduleMeeting}
+                disabled={scheduling}
+                className="w-full rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+              >
+                {scheduling ? "Scheduling…" : "Schedule meeting"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showReminder && (
         <ReminderCreateModal

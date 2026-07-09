@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { User, Plus } from "lucide-react";
 import type { Channel } from "./types";
 import UnreadBadge from "./UnreadBadge";
@@ -20,34 +21,44 @@ export default function DMList({
   directory: DirectoryUser[];
   onCreateDM: (userId: string, userName: string) => void;
 }) {
-  function handleNewDM() {
-    if (directory.length === 0) {
-      alert("No other teammates found to DM.");
-      return;
-    }
-    const names = directory.map((u) => u.name).join(", ");
-    const name = window.prompt(`Start a DM with (${names}):`);
-    if (!name?.trim()) return;
-    const match = directory.find((u) => u.name.toLowerCase() === name.trim().toLowerCase());
-    if (!match) {
-      alert(`No teammate named "${name}" found.`);
-      return;
-    }
-    onCreateDM(match.id, match.name);
-  }
+  const [open, setOpen] = useState(false);
 
   return (
     <div className="mb-4">
       <div className="mb-1 flex items-center justify-between px-2">
         <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Direct messages</span>
         <button
-          onClick={handleNewDM}
+          onClick={() => setOpen((v) => !v)}
           className="text-slate-500 hover:text-slate-200"
           aria-label="New DM"
         >
           <Plus size={14} />
         </button>
       </div>
+
+      {/* Team-member picker (replaces the old browser prompt) */}
+      {open && (
+        <div className="mb-1 max-h-48 overflow-y-auto rounded-lg border border-slate-800 bg-slate-950 p-1">
+          {directory.length === 0 ? (
+            <p className="px-2 py-1.5 text-xs text-slate-500">No teammates to message.</p>
+          ) : (
+            directory.map((u) => (
+              <button
+                key={u.id}
+                onClick={() => {
+                  onCreateDM(u.id, u.name);
+                  setOpen(false);
+                }}
+                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-slate-300 hover:bg-slate-800"
+              >
+                <User size={14} className="shrink-0 text-slate-500" />
+                <span className="truncate">{u.name}</span>
+              </button>
+            ))
+          )}
+        </div>
+      )}
+
       <div className="space-y-0.5">
         {dms.map((c) => (
           <button

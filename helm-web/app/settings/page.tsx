@@ -4,9 +4,12 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Plug, Brain } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { PROJECT_ID } from "../lib/project";
 
 type Project = { id: string; name: string; description: string | null };
 type User = { id: string; name: string; email: string; role: string };
+type ServiceHealth = { ok: boolean; detail: string; model?: string; collection?: string };
+type Health = { services: Record<string, ServiceHealth> } | null;
 
 const ROLES = ["employee", "manager", "vp"];
 
@@ -21,6 +24,7 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [health, setHealth] = useState<Health>(null);
 
   function flash(msg: string) {
     setToast(msg);
@@ -69,6 +73,10 @@ export default function SettingsPage() {
     // Initial data fetch on mount is a legitimate effect use.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     load();
+    fetch("/api/settings/health")
+      .then((r) => r.json())
+      .then(setHealth)
+      .catch(() => {});
   }, []);
 
   async function saveProject() {
@@ -167,10 +175,42 @@ export default function SettingsPage() {
             >
               {savingProject ? "Saving…" : "Save project"}
             </button>
+            <p className="pt-1 text-xs text-slate-600">
+              Default project_id (read-only): <span className="font-mono text-slate-500">{PROJECT_ID}</span>
+            </p>
           </div>
         ) : (
           <p className="text-sm text-slate-500">No project found.</p>
         )}
+      </Section>
+
+      {/* System Health */}
+      <Section title="System health">
+        {!health ? (
+          <p className="text-sm text-slate-500">Checking services…</p>
+        ) : (
+          <div className="space-y-2">
+            <HealthRow label="Supabase" s={health.services.supabase} />
+            <HealthRow label="Qdrant" s={health.services.qdrant} />
+            <HealthRow label="Enkrypt AI" s={health.services.enkrypt} />
+            <HealthRow label={`Gemini (${health.services.gemini?.model ?? "—"})`} s={health.services.gemini} />
+            <HealthRow label="Groq (Whisper)" s={health.services.groq} />
+            <HealthRow label="Slack webhook" s={health.services.slack} />
+          </div>
+        )}
+      </Section>
+
+      {/* Pipeline Configuration (read-only) */}
+      <Section title="Pipeline configuration">
+        <div className="space-y-2 text-sm text-slate-300">
+          <ConfigRow k="Embedding model" v="gemini-embedding-001 (3072d)" />
+          <ConfigRow k="Qdrant collections" v="meeting_items, transcript_chunks, documents" />
+          <ConfigRow k="Trust thresholds" v=">0.85 auto · 0.60–0.85 review · <0.60 quarantine" />
+          <ConfigRow k="Enkrypt checkpoints" v="4 active — injection, adherence, PII, policy" />
+          <ConfigRow k="Mastra workflows" v="6 registered" />
+          <ConfigRow k="Mastra agents" v="2 registered" />
+          <ConfigRow k="Mastra scorers" v="4 registered" />
+        </div>
       </Section>
 
       {/* Team */}
@@ -229,8 +269,25 @@ export default function SettingsPage() {
         </div>
       </Section>
 
+      {/* Security & compliance */}
+      <Section title="Security & compliance">
+        <div className="space-y-2 text-sm text-slate-300">
+          <ConfigRow k="Rate limiting" v="60 req/min per IP on pipeline & search endpoints" />
+          <ConfigRow k="Transport security" v="All external API calls use HTTPS / TLS 1.3" />
+          <ConfigRow k="Encryption at rest" v="Supabase enforces AES-256" />
+          <ConfigRow k="PII handling" v="4-checkpoint Enkrypt AI safety layer active" />
+          <ConfigRow k="Input validation" v="Zod schema validation + XSS sanitization" />
+          <p className="pt-1 text-xs text-slate-600">
+            Full report:{" "}
+            <a href="/api/compliance/status" target="_blank" rel="noreferrer" className="text-blue-400 hover:underline">/api/compliance/status</a>
+            {" · "}
+            <a href="/api/architecture" target="_blank" rel="noreferrer" className="text-blue-400 hover:underline">/api/architecture</a>
+          </p>
+        </div>
+      </Section>
+
       {/* Links to sub-pages */}
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-3 sm:grid-cols-3">
         <Link href="/settings/integrations" className="flex items-center gap-3 rounded-2xl border border-slate-800 bg-slate-900 p-4 hover:border-slate-600">
           <Plug className="text-blue-400" size={20} />
           <div>
@@ -245,7 +302,39 @@ export default function SettingsPage() {
             <p className="text-xs text-slate-500">Adaptive thresholds & prompts</p>
           </div>
         </Link>
+        <Link href="/observability" className="flex items-center gap-3 rounded-2xl border border-slate-800 bg-slate-900 p-4 hover:border-slate-600">
+          <Plug className="text-blue-400" size={20} />
+          <div>
+            <p className="text-sm font-medium text-white">Observability</p>
+            <p className="text-xs text-slate-500">LLM traces, health, compliance</p>
+          </div>
+        </Link>
       </div>
+    </div>
+  );
+}
+
+function StatusDot({ ok }: { ok: boolean }) {
+  return <span className={`inline-block h-2.5 w-2.5 rounded-full ${ok ? "bg-emerald-500" : "bg-red-500"}`} />;
+}
+
+function HealthRow({ label, s }: { label: string; s?: ServiceHealth }) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="flex items-center gap-2 text-sm text-slate-200">
+        <StatusDot ok={!!s?.ok} />
+        {label}
+      </span>
+      <span className="truncate text-xs text-slate-500">{s?.detail ?? "unknown"}</span>
+    </div>
+  );
+}
+
+function ConfigRow({ k, v }: { k: string; v: string }) {
+  return (
+    <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-slate-800/60 pb-1.5">
+      <span className="text-xs font-medium text-slate-400">{k}</span>
+      <span className="text-right text-sm text-slate-200">{v}</span>
     </div>
   );
 }

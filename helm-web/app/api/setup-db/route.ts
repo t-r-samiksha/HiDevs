@@ -45,6 +45,9 @@ CREATE TABLE IF NOT EXISTS rooms (
 -- controls (end-for-all, recording) on the room page.
 ALTER TABLE rooms ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES users(id);
 
+-- User-entered display title for the room (jitsi_room_name stays a technical id).
+ALTER TABLE rooms ADD COLUMN IF NOT EXISTS title TEXT;
+
 CREATE TABLE IF NOT EXISTS channels (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID REFERENCES projects(id),

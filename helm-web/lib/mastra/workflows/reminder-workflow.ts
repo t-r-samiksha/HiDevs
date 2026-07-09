@@ -7,6 +7,7 @@
 import { createWorkflow, createStep } from "@mastra/core/workflows";
 import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
+import { sendEmail } from "@/lib/mailer";
 
 function supa() {
   return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
@@ -84,15 +85,32 @@ const createRemindersStep = createStep({
         continue;
       }
 
-      const message = `Reminder: "${item.text.slice(0, 80)}" is due ${new Date(
-        item.deadline_iso
-      ).toLocaleDateString()}.`;
+      const dueStr = new Date(item.deadline_iso).toLocaleDateString();
+      const message = `Reminder: "${item.text.slice(0, 80)}" is due ${dueStr}.`;
       const { data, error } = await supabase
         .from("reminders")
         .insert({ item_id: item.id, remind_at: item.deadline_iso, message, sent: false })
         .select()
         .single();
       if (!error && data) created.push(data);
+
+      // Email the owner (best-effort). owner is a display name → look up the
+      // matching user's email; skip the email if there's no match.
+      if (item.owner) {
+        const { data: owner } = await supabase
+          .from("users")
+          .select("email")
+          .ilike("name", item.owner)
+          .limit(1)
+          .maybeSingle();
+        if (owner?.email) {
+          await sendEmail(
+            owner.email,
+            `Helm reminder: "${item.text.slice(0, 60)}" is due ${dueStr}`,
+            `<p>Reminder: <strong>${item.text}</strong> is due on <strong>${dueStr}</strong>.</p><p>Please update your progress in Helm.</p>`
+          ).catch((e) => console.error("Reminder email failed:", e));
+        }
+      }
     }
 
     const slackUrl = process.env.SLACK_WEBHOOK_URL;

@@ -1,18 +1,24 @@
 "use client";
 
 import { useState } from "react";
-import { Send } from "lucide-react";
+import { Send, Loader2 } from "lucide-react";
 
-/** Text input + send button. */
-export default function MessageComposer({ onSend }: { onSend: (text: string) => void }) {
+/** Text input + send button. `onSend` may be async; the button shows a spinner. */
+export default function MessageComposer({ onSend }: { onSend: (text: string) => void | Promise<void> }) {
   const [text, setText] = useState("");
+  const [sending, setSending] = useState(false);
 
-  function submit(e: React.FormEvent) {
+  async function submit(e: React.FormEvent) {
     e.preventDefault();
     const trimmed = text.trim();
-    if (!trimmed) return;
-    onSend(trimmed);
+    if (!trimmed || sending) return;
     setText("");
+    setSending(true);
+    try {
+      await onSend(trimmed);
+    } finally {
+      setSending(false);
+    }
   }
 
   return (
@@ -25,11 +31,11 @@ export default function MessageComposer({ onSend }: { onSend: (text: string) => 
       />
       <button
         type="submit"
-        disabled={!text.trim()}
+        disabled={!text.trim() || sending}
         className="rounded-xl bg-blue-600 p-2.5 text-white hover:bg-blue-700 disabled:opacity-40"
         aria-label="Send"
       >
-        <Send size={18} />
+        {sending ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
       </button>
     </form>
   );
