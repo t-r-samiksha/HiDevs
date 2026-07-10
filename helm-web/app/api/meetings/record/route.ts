@@ -5,7 +5,7 @@ import { google } from "@ai-sdk/google";
 import { embedMany } from "ai";
 import { extractionAgent } from "@/lib/mastra/agents/extraction-agent";
 import { ExtractionResultSchema } from "@/lib/mastra/schemas/item.schema";
-import { applySpeakerTimeline } from "@/lib/diarize";
+import { applySpeakerTimeline, addSpeakerLabels, unlabeledTranscript } from "@/lib/diarize";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -94,7 +94,21 @@ export async function POST(req: NextRequest) {
           );
         }
       } catch {
-        /* ignore malformed timeline — falls back to [MM:SS] text */
+        /* ignore malformed timeline — falls back to voice-based labeling below */
+      }
+    }
+
+    // Room roster, used as a closed candidate list for the Gemini voice-based
+    // fallback below (only needed when Jitsi's own speaker timeline is empty —
+    // e.g. a single-participant room, where dominantSpeakerChanged may never fire).
+    let knownParticipants: string[] | undefined;
+    const participantsRaw = form.get("participants");
+    if (typeof participantsRaw === "string") {
+      try {
+        const parsed = JSON.parse(participantsRaw);
+        if (Array.isArray(parsed)) knownParticipants = parsed.filter((p) => typeof p === "string");
+      } catch {
+        /* ignore malformed roster */
       }
     }
 
@@ -128,17 +142,24 @@ export async function POST(req: NextRequest) {
               start: s.start ?? 0,
               text: String(s.text ?? "").trim(),
             }));
-            if (speakerTimeline && speakerTimeline.length > 0) {
-              // "[MM:SS] Name: text" via Jitsi's own speaker detection (no LLM).
-              transcript = applySpeakerTimeline(segs, speakerTimeline);
-            } else {
-              transcript = segs
-                .map((s: { start: number; text: string }) => {
-                  const m = Math.floor(s.start / 60);
-                  const sec = Math.floor(s.start % 60);
-                  return `[${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}] ${s.text}`;
-                })
-                .join("\n");
+            // Gemini listens to the audio per-segment, so it catches quick
+            // back-and-forth exchanges that Jitsi's own dominantSpeakerChanged
+            // timeline can miss (that event only fires on a *change*, so a
+            // sparse/stale timeline silently mislabels everything after the
+            // last detected switch to whoever it last saw — tried this first
+            // and it attributed several minutes of a second speaker's lines to
+            // the first). Try Gemini first; only fall back to the timeline
+            // (deterministic, no quota) or plain unlabeled text if it fails.
+            const audioBuffer = await file.arrayBuffer();
+            try {
+              transcript = await addSpeakerLabels(audioBuffer, file.type, segs, knownParticipants);
+            } catch (err) {
+              console.error("Gemini speaker labeling failed:", err);
+              if (speakerTimeline && speakerTimeline.length > 0) {
+                transcript = applySpeakerTimeline(segs, speakerTimeline);
+              } else {
+                transcript = unlabeledTranscript(segs);
+              }
             }
           } else {
             transcript = result.text ?? "";

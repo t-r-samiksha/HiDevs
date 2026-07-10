@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { addSpeakerLabels } from "@/lib/diarize";
+import { addSpeakerLabels, unlabeledTranscript } from "@/lib/diarize";
 
 const GROQ_URL = "https://api.groq.com/openai/v1/audio/transcriptions";
 const ALLOWED_TYPES = new Set(["audio/mpeg", "audio/wav", "audio/mp4", "audio/webm", "audio/x-m4a"]);
@@ -69,7 +69,12 @@ export async function POST(req: NextRequest) {
     // audio and label who's speaking per segment (falls back to unlabeled
     // [MM:SS] lines if that call fails, so transcription never blocks on it).
     const audioBuffer = await file.arrayBuffer();
-    transcript = await addSpeakerLabels(audioBuffer, file.type, segments);
+    try {
+      transcript = await addSpeakerLabels(audioBuffer, file.type, segments);
+    } catch (err) {
+      console.error("Speaker labeling failed, falling back to unlabeled transcript:", err);
+      transcript = unlabeledTranscript(segments);
+    }
   } else {
     transcript = result.text ?? "";
   }

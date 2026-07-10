@@ -1,5 +1,6 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { addSpeakerLabels, unlabeledTranscript } from "@/lib/diarize";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -67,13 +68,21 @@ export async function POST(
     const result = await groqRes.json();
     let transcript = "";
     if (result.segments?.length) {
-      transcript = result.segments
-        .map((seg: any) => {
-          const m = Math.floor((seg.start ?? 0) / 60);
-          const s = Math.floor((seg.start ?? 0) % 60);
-          return `[${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}] ${String(seg.text ?? "").trim()}`;
-        })
-        .join("\n");
+      const segments = result.segments.map((seg: { start?: number; text?: string }) => ({
+        start: seg.start ?? 0,
+        text: String(seg.text ?? "").trim(),
+      }));
+      // Whisper gives no speaker identity — same diarization step as
+      // /api/transcribe: ask Gemini to listen to the audio and label who's
+      // speaking per segment, falling back to unlabeled [MM:SS] lines if
+      // that call fails so transcription never blocks on it.
+      const audioBuffer = await file.arrayBuffer();
+      try {
+        transcript = await addSpeakerLabels(audioBuffer, file.type, segments);
+      } catch (err) {
+        console.error("Speaker labeling failed, falling back to unlabeled transcript:", err);
+        transcript = unlabeledTranscript(segments);
+      }
     } else {
       transcript = result.text ?? "";
     }

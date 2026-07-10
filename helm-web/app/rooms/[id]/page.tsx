@@ -111,6 +111,12 @@ export default function RoomPage() {
           if (speakerTimelineRef.current.length > 0) {
             form.append("speakerTimeline", JSON.stringify(speakerTimelineRef.current));
           }
+          // Room roster — used server-side as a closed candidate list for the
+          // Gemini voice-based fallback when the timeline above is empty
+          // (e.g. a single-participant room never triggers dominantSpeakerChanged).
+          if (participantsRef.current.length > 0) {
+            form.append("participants", JSON.stringify(participantsRef.current));
+          }
           // Deterministic save: this endpoint ALWAYS creates the meeting + saves
           // the transcript, then extracts items best-effort. The meeting shows up
           // in Meetings even if extraction is thin.

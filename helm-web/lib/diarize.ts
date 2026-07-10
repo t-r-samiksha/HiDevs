@@ -8,6 +8,13 @@ function formatTime(seconds: number): string {
   return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
 }
 
+// Plain "[MM:SS] text" with no speaker label at all — the last-resort output
+// when no diarization method (Gemini or Jitsi timeline) is available or all
+// of them failed.
+export function unlabeledTranscript(segments: Array<{ start: number; text: string }>): string {
+  return segments.map((s) => `[${formatTime(s.start)}] ${s.text}`).join("\n");
+}
+
 // Ground-truth alternative to addSpeakerLabels below: when the caller has a
 // live timeline of Jitsi's own dominantSpeakerChanged events (timestamped on
 // the same clock as the recording), each Whisper segment can be labeled by a
@@ -41,15 +48,16 @@ export function applySpeakerTimeline(
 // falling back to "Speaker N" otherwise. The original Whisper text is never
 // altered — only a label is prefixed — so source_quote / PII / Enkrypt
 // adherence matching downstream still lines up exactly with the transcript.
+// Throws on failure (quota, network, malformed response) instead of quietly
+// degrading — callers choose their own fallback (a Jitsi speaker timeline if
+// they have one, otherwise unlabeledTranscript), since the right fallback
+// differs per call site.
 export async function addSpeakerLabels(
   audioBuffer: ArrayBuffer,
   mimeType: string,
   segments: Array<{ start: number; text: string }>,
   knownParticipants?: string[]
 ): Promise<string> {
-  const fallback = () =>
-    segments.map((s) => `[${formatTime(s.start)}] ${s.text}`).join("\n");
-
   if (segments.length === 0) return "";
 
   const numbered = segments
@@ -72,36 +80,31 @@ Return ONLY a JSON array of exactly ${segments.length} strings (speaker labels o
 
 ${numbered}`;
 
-  try {
-    const { text } = await generateText({
-      model: google(GEMINI_MODEL_NAME),
-      // Diarization is a nice-to-have fallback, not core pipeline output —
-      // don't burn ~20s retrying against a 429. Most quota exhaustion here is
-      // a per-day cap (not per-minute), so retrying within seconds can't
-      // succeed anyway; fail fast into the unlabeled-transcript fallback below.
-      maxRetries: 0,
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "text", text: prompt },
-            { type: "file", data: Buffer.from(audioBuffer), mediaType: mimeType },
-          ],
-        },
-      ],
-    });
+  const { text } = await generateText({
+    model: google(GEMINI_MODEL_NAME),
+    // Diarization is a nice-to-have fallback, not core pipeline output —
+    // don't burn ~20s retrying against a 429. Most quota exhaustion here is
+    // a per-day cap (not per-minute), so retrying within seconds can't
+    // succeed anyway; fail fast so the caller can fall back immediately.
+    maxRetries: 0,
+    messages: [
+      {
+        role: "user",
+        content: [
+          { type: "text", text: prompt },
+          { type: "file", data: Buffer.from(audioBuffer), mediaType: mimeType },
+        ],
+      },
+    ],
+  });
 
-    const cleaned = text.replace(/```json|```/g, "").trim();
-    const labels: unknown = JSON.parse(cleaned);
-    if (!Array.isArray(labels) || labels.length !== segments.length) {
-      throw new Error("Speaker label count mismatch");
-    }
-
-    return segments
-      .map((s, i) => `[${formatTime(s.start)}] ${String(labels[i]).trim()}: ${s.text}`)
-      .join("\n");
-  } catch (err) {
-    console.error("Speaker labeling failed, falling back to unlabeled transcript:", err);
-    return fallback();
+  const cleaned = text.replace(/```json|```/g, "").trim();
+  const labels: unknown = JSON.parse(cleaned);
+  if (!Array.isArray(labels) || labels.length !== segments.length) {
+    throw new Error("Speaker label count mismatch");
   }
+
+  return segments
+    .map((s, i) => `[${formatTime(s.start)}] ${String(labels[i]).trim()}: ${s.text}`)
+    .join("\n");
 }
