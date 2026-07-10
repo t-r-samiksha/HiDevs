@@ -8,3 +8,8 @@ dist
 *.db-* 
 .netlify 
 .vercel 
+
+
+# Claude Code
+.claude/
+CLAUDE.md
