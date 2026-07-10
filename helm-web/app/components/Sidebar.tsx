@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { NAV_ITEMS, EMPLOYEE_NAV_ITEMS, isActive } from "./nav";
 import { useRole } from "../lib/useRole";
+import { getTotalUnreadCount, onChannelRead } from "./chat/unread";
 
 /**
  * Left navigation rail (250px on desktop, icons-only when collapsed).
@@ -25,28 +26,43 @@ export default function Sidebar({
   const [collapsed, setCollapsed] = useState(false);
   const [unreadChat, setUnreadChat] = useState(0);
 
-  // Unread chat count. The chat tables are owned by Member 1 and may not exist
-  // yet — fail silently to 0 so the sidebar never breaks.
-  useEffect(() => {
-    let active = true;
-    async function loadUnread() {
-      try {
-        // TODO: Replace with a real unread query once Member 1 ships the
-        // messages / channel_members tables and read-receipt tracking.
-        const { count, error } = await supabase
-          .from("messages")
-          .select("id", { count: "exact", head: true });
-        if (!active || error) return;
-        setUnreadChat(count ?? 0);
-      } catch {
-        /* table not ready — leave badge at 0 */
+  const refreshUnread = useCallback(async () => {
+    try {
+      let { data: { session } } = await supabase.auth.getSession();
+      // Same stale-token gotcha as ChatView: getSession() won't refresh an
+      // already-expired token on its own.
+      const expiresAtMs = (session?.expires_at ?? 0) * 1000;
+      if (session && expiresAtMs <= Date.now()) {
+        const { data: refreshed } = await supabase.auth.refreshSession();
+        session = refreshed.session;
       }
+      const userId = session?.user?.id;
+      if (!userId) return;
+      setUnreadChat(await getTotalUnreadCount(userId));
+    } catch {
+      /* leave the badge as-is on failure rather than flash it to 0 */
     }
-    loadUnread();
-    return () => {
-      active = false;
-    };
   }, []);
+
+  // Recompute on every navigation (covers "just read something in /chat")
+  // and whenever a channel gets marked read or a new message arrives anywhere.
+  useEffect(() => {
+    refreshUnread();
+  }, [refreshUnread, pathname]);
+
+  useEffect(() => onChannelRead(refreshUnread), [refreshUnread]);
+
+  useEffect(() => {
+    const channel = supabase
+      .channel("sidebar-unread-tracker")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, () => {
+        refreshUnread();
+      })
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [refreshUnread]);
 
   const width = collapsed ? "w-[68px]" : "w-[250px]";
 

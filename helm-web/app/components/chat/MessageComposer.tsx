@@ -1,17 +1,33 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Send, Loader2 } from "lucide-react";
 
 /** Text input + send button. `onSend` may be async; the button shows a spinner. */
-export default function MessageComposer({ onSend }: { onSend: (text: string) => void | Promise<void> }) {
+export default function MessageComposer({
+  onSend,
+  onTyping,
+}: {
+  onSend: (text: string) => void | Promise<void>;
+  onTyping?: (typing: boolean) => void;
+}) {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+    setText(e.target.value);
+    onTyping?.(true);
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    typingTimeoutRef.current = setTimeout(() => onTyping?.(false), 2000);
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     const trimmed = text.trim();
     if (!trimmed || sending) return;
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    onTyping?.(false);
     setText("");
     setSending(true);
     try {
@@ -25,7 +41,7 @@ export default function MessageComposer({ onSend }: { onSend: (text: string) => 
     <form onSubmit={submit} className="flex items-center gap-2 border-t border-slate-800 p-3">
       <input
         value={text}
-        onChange={(e) => setText(e.target.value)}
+        onChange={handleChange}
         placeholder="Message…"
         className="flex-1 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500"
       />
