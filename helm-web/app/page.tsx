@@ -441,9 +441,9 @@ function MetricCard({ label, value, color }: { label: string; value: number; col
   const valueColor =
     color === "amber" ? "text-amber-400" : color === "red" ? "text-red-400" : color === "green" ? "text-green-400" : "text-white";
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
-      <p className="mb-1 text-xs text-slate-400">{label}</p>
-      <p className={`text-2xl font-semibold ${valueColor}`}>{value}</p>
+    <div className="rounded-lg border border-slate-800 bg-slate-900 p-4 transition-colors hover:border-slate-700">
+      <p className="mb-1.5 text-xs text-slate-400">{label}</p>
+      <p className={`font-mono text-[26px] font-semibold leading-none tracking-tight ${valueColor}`}>{value}</p>
     </div>
   );
 }

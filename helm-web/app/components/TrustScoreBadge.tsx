@@ -1,10 +1,12 @@
-// Shared trust-score indicator.
-// Tiers (from the project design system): >0.85 green, 0.60–0.85 amber, <0.60 red.
+// The Trust Meter — Helm's signature. Trust is the product's core (every item
+// is Enkrypt-validated), so it reads as an instrument, not a badge: a small
+// 3-bar signal gauge. Tiers: >0.85 = 3 bars (high), 0.60–0.85 = 2 bars (med),
+// <0.60 = 1 bar (low). Hover shows the exact score.
 
-function tier(score: number) {
-  if (score >= 0.85) return { badge: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200", bar: "bg-green-500" };
-  if (score >= 0.6) return { badge: "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200", bar: "bg-amber-500" };
-  return { badge: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200", bar: "bg-red-500" };
+function tierInfo(score: number): { filled: number; color: string; label: string } {
+  if (score >= 0.85) return { filled: 3, color: "var(--success)", label: "high" };
+  if (score >= 0.6) return { filled: 2, color: "var(--warning)", label: "medium" };
+  return { filled: 1, color: "var(--danger)", label: "low" };
 }
 
 export default function TrustScoreBadge({
@@ -13,31 +15,43 @@ export default function TrustScoreBadge({
   className = "",
 }: {
   score: number;
-  /** When true, render a labelled color bar (used on the item detail page). */
+  /** Labelled progress bar (item detail page). */
   showBar?: boolean;
   className?: string;
 }) {
-  const t = tier(score);
+  const t = tierInfo(score);
 
   if (showBar) {
     return (
       <div className={className}>
-        <div className="mb-1 flex items-center justify-between text-xs">
+        <div className="mb-1.5 flex items-center justify-between text-xs">
           <span className="text-slate-400">Trust score</span>
-          <span className="font-medium text-slate-200">🛡️ {score.toFixed(2)}</span>
+          <span className="font-mono font-medium text-slate-200">{score.toFixed(2)}</span>
         </div>
-        <div className="h-2 w-full overflow-hidden rounded-full bg-slate-800">
-          <div className={`h-full ${t.bar}`} style={{ width: `${Math.round(score * 100)}%` }} />
+        <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-800">
+          <div
+            className="h-full rounded-full transition-[width] duration-500"
+            style={{ width: `${Math.round(score * 100)}%`, background: t.color }}
+          />
         </div>
       </div>
     );
   }
 
+  const heights = [5, 8, 11];
   return (
     <span
-      className={`inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-xs font-medium ${t.badge} ${className}`}
+      title={`Trust ${score.toFixed(2)} · ${t.label}`}
+      aria-label={`Trust score ${score.toFixed(2)}`}
+      className={`inline-flex shrink-0 cursor-default items-end gap-[2px] ${className}`}
     >
-      🛡️ {score.toFixed(2)}
+      {heights.map((h, i) => (
+        <span
+          key={i}
+          className="w-[3px] rounded-[1px]"
+          style={{ height: h, background: i < t.filled ? t.color : "var(--border-hover)" }}
+        />
+      ))}
     </span>
   );
 }

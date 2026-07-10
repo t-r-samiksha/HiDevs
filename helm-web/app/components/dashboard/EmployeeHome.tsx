@@ -92,8 +92,10 @@ export default function EmployeeHome({ userName }: { userName: string }) {
     <div className="mx-auto max-w-6xl px-4 py-6 md:px-6">
       {/* Header */}
       <div className="mb-6">
-        <h1 className="text-xl font-semibold text-white">Welcome back, {userName || "there"}</h1>
-        <p className="mt-1 text-sm text-slate-400">{today}</p>
+        <h1 className="font-display text-[26px] font-semibold tracking-tight text-white">
+          Welcome back, {userName || "there"}
+        </h1>
+        <p className="mt-1 text-[13px] text-slate-500">{today}</p>
       </div>
 
       {/* Section 1: Quick stats */}
@@ -189,9 +191,9 @@ export default function EmployeeHome({ userName }: { userName: string }) {
 
 function Stat({ label, value, tone }: { label: string; value: number; tone: string }) {
   return (
-    <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
-      <div className={`text-2xl font-semibold ${tone}`}>{value}</div>
-      <div className="mt-0.5 text-xs text-slate-500">{label}</div>
+    <div className="rounded-lg border border-slate-800 bg-slate-900 p-4 transition-colors hover:border-slate-700">
+      <div className={`font-mono text-[26px] font-semibold leading-none tracking-tight ${tone}`}>{value}</div>
+      <div className="mt-1.5 text-xs text-slate-500">{label}</div>
     </div>
   );
 }

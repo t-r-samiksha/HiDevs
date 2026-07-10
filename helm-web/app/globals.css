@@ -1,54 +1,201 @@
 @import "tailwindcss";
 
+/* ============================================================================
+   Helm — "night command deck" design system
+   Cool graphite base · iris-periwinkle accent · brass-amber gauges.
+   The whole app is reskinned by remapping the Tailwind color/radius scale in
+   the @theme block below, so every existing slate-/blue-/emerald- utility
+   picks up these tokens with zero markup churn.
+   ========================================================================== */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Surfaces */
+  --bg-primary: #0b0e14;
+  --bg-secondary: #10141c;
+  --bg-tertiary: #151a23;
+  --bg-hover: #1b212c;
+
+  /* Lines */
+  --border-primary: #232a36;
+  --border-hover: #333c4a;
+
+  /* Text */
+  --text-primary: #e7eaf0;
+  --text-secondary: #9aa3b2;
+  --text-tertiary: #626b7b;
+
+  /* Accent — iris/periwinkle */
+  --accent: #7b87f0;
+  --accent-hover: #8f9af6;
+  --accent-muted: rgba(123, 135, 240, 0.12);
+
+  /* Semantics */
+  --success: #46b98a;
+  --warning: #e0a43b;
+  --danger: #e0574b;
+  --info: #3fb0c6;
+
+  --background: var(--bg-primary);
+  --foreground: var(--text-primary);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+@theme {
+  /* Fonts (loaded via next/font in layout.tsx) */
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, "SFMono-Regular", monospace;
+  --font-display: var(--font-space-grotesk), var(--font-inter), sans-serif;
+
+  /* Tighten the global radius so cards read as rounded-lg, not pillowy */
+  --radius-lg: 0.5rem;
+  --radius-xl: 0.625rem;
+  --radius-2xl: 0.75rem;
+
+  /* Softened white — headings/button text, never a harsh pure #fff */
+  --color-white: #f4f6fa;
+
+  /* Graphite ramp (remaps every slate-* utility across the app) */
+  --color-slate-50: #f3f5f8;
+  --color-slate-100: #e7eaf0;
+  --color-slate-200: #d4d9e1;
+  --color-slate-300: #b9c0cc;
+  --color-slate-400: #9aa3b2;
+  --color-slate-500: #626b7b;
+  --color-slate-600: #4a5464;
+  --color-slate-700: #333c4a;
+  --color-slate-800: #232a36;
+  --color-slate-900: #151a23;
+  --color-slate-950: #0b0e14;
+
+  /* Accent ramp (remaps blue-*) */
+  --color-blue-300: #b3bcfa;
+  --color-blue-400: #a5aef8;
+  --color-blue-500: #7b87f0;
+  --color-blue-600: #7b87f0;
+  --color-blue-700: #8f9af6;
+  --color-blue-800: #3a4080;
+  --color-blue-900: #262b54;
+  --color-blue-950: #191d38;
+
+  /* Success (emerald + green) */
+  --color-emerald-300: #6fd3a6;
+  --color-emerald-400: #57c596;
+  --color-emerald-500: #46b98a;
+  --color-emerald-600: #3ba87c;
+  --color-emerald-800: #143b2e;
+  --color-emerald-900: #102c23;
+  --color-emerald-950: #0c211a;
+  --color-green-300: #6fd3a6;
+  --color-green-400: #57c596;
+  --color-green-500: #46b98a;
+  --color-green-600: #3ba87c;
+  --color-green-800: #143b2e;
+  --color-green-900: #102c23;
+  --color-green-950: #0c211a;
+
+  /* Warning (amber + yellow) — the brass gauge */
+  --color-amber-200: #f0ce8c;
+  --color-amber-300: #ebbe6a;
+  --color-amber-400: #e6b14f;
+  --color-amber-500: #e0a43b;
+  --color-amber-600: #c8912f;
+  --color-amber-800: #3e2f14;
+  --color-amber-900: #2e230f;
+  --color-amber-950: #22190b;
+  --color-yellow-300: #ebbe6a;
+  --color-yellow-400: #e6b14f;
+  --color-yellow-500: #e0a43b;
+
+  /* Danger (red + rose) */
+  --color-red-300: #f0968d;
+  --color-red-400: #ea7267;
+  --color-red-500: #e0574b;
+  --color-red-600: #ce4a3f;
+  --color-red-800: #3e1c18;
+  --color-red-900: #2e1512;
+  --color-red-950: #22100d;
+  --color-rose-400: #ea7267;
+  --color-rose-500: #e0574b;
+
+  /* Info / live (cyan, distinct from the accent) */
+  --color-cyan-400: #59c1d4;
+  --color-cyan-500: #3fb0c6;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@layer base {
+  body {
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Display face carries page/section titles */
+  h1,
+  h2 {
+    font-family: var(--font-display);
+    letter-spacing: -0.011em;
+  }
+
+  ::selection {
+    background: var(--accent-muted);
+    color: var(--text-primary);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+
+  /* Quiet, thin scrollbars */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-primary) transparent;
+  }
+  ::-webkit-scrollbar {
+    width: 9px;
+    height: 9px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--border-primary);
+    border-radius: 9999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--border-hover);
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* Tabular numerals for anything typeset in the mono/data face */
+.font-mono {
+  font-feature-settings: "tnum" 1;
 }
 
-/* react-big-calendar dark theme overrides (scoped to .rbc-dark) */
+/* ============================================================================
+   react-big-calendar dark theme (scoped to .rbc-dark) — repalette
+   ========================================================================== */
 .rbc-dark .rbc-toolbar {
-  color: #e2e8f0;
+  color: var(--text-primary);
   margin-bottom: 12px;
 }
 .rbc-dark .rbc-toolbar button {
-  color: #cbd5e1;
-  border-color: #334155;
-  background: #1e293b;
+  color: var(--text-secondary);
+  border-color: var(--border-primary);
+  background: var(--bg-tertiary);
 }
 .rbc-dark .rbc-toolbar button:hover,
 .rbc-dark .rbc-toolbar button:focus {
-  background: #334155;
-  color: #fff;
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }
 .rbc-dark .rbc-toolbar button.rbc-active {
-  background: #2563eb;
+  background: var(--accent);
   color: #fff;
-  border-color: #2563eb;
+  border-color: var(--accent);
 }
 .rbc-dark .rbc-month-view,
 .rbc-dark .rbc-time-view,
 .rbc-dark .rbc-agenda-view table {
-  border-color: #334155;
+  border-color: var(--border-primary);
 }
 .rbc-dark .rbc-header,
 .rbc-dark .rbc-time-header-content,
@@ -56,23 +203,24 @@ body {
 .rbc-dark .rbc-day-bg + .rbc-day-bg,
 .rbc-dark .rbc-month-row + .rbc-month-row,
 .rbc-dark .rbc-time-content > * + * > * {
-  border-color: #334155;
+  border-color: var(--border-primary);
 }
 .rbc-dark .rbc-header {
-  color: #94a3b8;
+  color: var(--text-tertiary);
   padding: 6px 4px;
+  font-weight: 500;
 }
 .rbc-dark .rbc-off-range-bg {
-  background: #0f172a;
+  background: var(--bg-secondary);
 }
 .rbc-dark .rbc-today {
-  background: rgba(37, 99, 235, 0.12);
+  background: var(--accent-muted);
 }
 .rbc-dark .rbc-date-cell,
 .rbc-dark .rbc-agenda-view td {
-  color: #cbd5e1;
+  color: var(--text-secondary);
 }
 .rbc-dark .rbc-show-more {
-  color: #60a5fa;
+  color: var(--accent);
   background: transparent;
 }

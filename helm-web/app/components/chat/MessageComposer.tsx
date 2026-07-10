@@ -43,12 +43,12 @@ export default function MessageComposer({
         value={text}
         onChange={handleChange}
         placeholder="Message…"
-        className="flex-1 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500"
+        className="flex-1 rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-white placeholder-slate-600 transition-colors focus:border-[var(--accent)] focus:outline-none"
       />
       <button
         type="submit"
         disabled={!text.trim() || sending}
-        className="rounded-xl bg-blue-600 p-2.5 text-white hover:bg-blue-700 disabled:opacity-40"
+        className="rounded-lg bg-blue-600 p-2.5 text-white transition-colors hover:bg-blue-700 disabled:opacity-40"
         aria-label="Send"
       >
         {sending ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}

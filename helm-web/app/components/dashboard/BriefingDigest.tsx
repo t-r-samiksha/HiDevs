@@ -35,13 +35,16 @@ export default function BriefingDigest({ summary }: { summary: string }) {
   }
 
   return (
-    <div className="mb-6 rounded-2xl border border-slate-800 bg-slate-900 p-5">
+    <div
+      className="mb-6 rounded-lg border border-l-2 border-slate-800 bg-slate-900 p-5"
+      style={{ borderLeftColor: "var(--accent)" }}
+    >
       <div className="mb-2 flex items-center gap-2">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-400">Today&apos;s briefing</h2>
+        <h2 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">Today&apos;s briefing</h2>
         {supported && (
           <button
             onClick={toggle}
-            className={`flex items-center gap-1 rounded-lg px-2 py-1 text-xs transition-colors ${
+            className={`flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors ${
               speaking ? "bg-red-950 text-red-300" : "bg-slate-800 text-slate-300 hover:bg-slate-700"
             }`}
             aria-label={speaking ? "Stop briefing" : "Play briefing"}
@@ -51,7 +54,7 @@ export default function BriefingDigest({ summary }: { summary: string }) {
           </button>
         )}
       </div>
-      <p className="text-sm leading-relaxed text-slate-200">{summary}</p>
+      <p className="text-[15px] leading-relaxed text-slate-200">{summary}</p>
     </div>
   );
 }

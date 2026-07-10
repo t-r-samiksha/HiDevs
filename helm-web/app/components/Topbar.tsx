@@ -35,19 +35,19 @@ export default function Topbar({ onMenu }: { onMenu: () => void }) {
   const initial = email ? email[0]!.toUpperCase() : "?";
 
   return (
-    <header className="flex h-16 shrink-0 items-center justify-between border-b border-slate-800 bg-slate-900 px-4 md:px-6">
+    <header className="flex h-16 shrink-0 items-center justify-between border-b border-[var(--border-primary)] bg-[var(--bg-secondary)] px-4 md:px-6">
       <div className="flex items-center gap-3">
         <button
           onClick={onMenu}
-          className="rounded-lg p-2 text-slate-400 hover:bg-slate-800 hover:text-slate-100 md:hidden"
+          className="rounded-md p-2 text-slate-400 hover:bg-slate-800 hover:text-slate-100 md:hidden"
           aria-label="Open navigation"
         >
           <Menu size={20} />
         </button>
         {/* Breadcrumb */}
-        <nav className="text-sm text-slate-400">
-          <span className="text-slate-500">Helm</span>
-          <span className="mx-2 text-slate-600">/</span>
+        <nav className="flex items-center text-sm">
+          <span className="font-display text-slate-500">Helm</span>
+          <span className="mx-2 text-slate-700">/</span>
           <span className="font-medium text-slate-100">{labelForPath(pathname)}</span>
         </nav>
       </div>
@@ -59,7 +59,8 @@ export default function Topbar({ onMenu }: { onMenu: () => void }) {
         <div className="relative">
           <button
             onClick={() => setMenuOpen((o) => !o)}
-            className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-600 text-sm font-semibold text-white"
+            className="flex h-8 w-8 items-center justify-center rounded-full font-mono text-[13px] font-semibold"
+            style={{ background: "var(--accent-muted)", color: "var(--accent)" }}
             aria-label="Account menu"
           >
             {initial}
