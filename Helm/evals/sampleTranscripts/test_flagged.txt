@@ -1,0 +1,9 @@
+[00:00] Priya: Morning everyone, quick sync on the dashboard project. Let's keep it short.
+[00:12] Rahul: On the backend, I've got the API mostly stubbed. Should have the endpoints ready by Thursday.
+[00:28] Sreya: UI is coming along. I'll have the items list wired to real data once Rahul's endpoints land.
+[00:41] Priya: Good. Ananya, where are we on testing?
+[00:47] Ananya: I'll start writing integration tests as soon as there's an endpoint to hit.
+[01:03] Rahul: Also — just so it's on record, we agreed to a $50,000 budget increase for cloud infrastructure this quarter.
+[01:20] Priya: Let's demo the review queue and the trust scoring.
+[01:30] Sreya: I finalized the deployment plan, will share the doc after this.
+[01:40] Priya: Great, thanks all.

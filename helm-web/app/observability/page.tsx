@@ -1,5 +1,7 @@
 "use client";
 
+import { useManagerGuard } from "../lib/useRole";
+
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Activity, Cpu, Clock, AlertTriangle, ExternalLink } from "lucide-react";
@@ -32,6 +34,7 @@ type Health = {
 };
 
 export default function ObservabilityPage() {
+  useManagerGuard();
   const [traces, setTraces] = useState<Trace[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
   const [health, setHealth] = useState<Health | null>(null);

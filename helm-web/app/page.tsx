@@ -10,7 +10,9 @@ import BriefingDigest from "./components/dashboard/BriefingDigest";
 import ApprovalQueueWidget from "./components/dashboard/ApprovalQueueWidget";
 import InsightCard, { type Insight } from "./components/dashboard/InsightCard";
 import DashboardCharts from "./components/dashboard/DashboardCharts";
+import EmployeeHome from "./components/dashboard/EmployeeHome";
 import { PROJECT_ID } from "./lib/project";
+import { useRole } from "./lib/useRole";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -55,6 +57,8 @@ export default function Dashboard() {
   const [pendingFollowups, setPendingFollowups] = useState(0);
   const [insights, setInsights] = useState<Insight[]>([]);
   const [loading, setLoading] = useState(true);
+  const { name: myName, isManager, loading: roleLoading } = useRole();
+  const [view, setView] = useState<"team" | "personal">("team");
 
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
@@ -156,6 +160,25 @@ export default function Dashboard() {
     setContradictions(contradictionsRes.data || []);
     setPendingFollowups(followupRes.count ?? 0);
 
+    // Current user's role → drives the employee "Your tasks" view below.
+    try {
+      const { data: usersRows } = await supabase.from("users").select("id, name, role");
+      const users = usersRows || [];
+
+      // FRAGILE string-matching: items.owner is a free-text name, not a FK.
+      // Log owners that don't map to a real user so the mismatch is visible,
+      // not silently trusted.
+      const known = new Set(users.map((u) => String(u.name).toLowerCase()));
+      const orphans = [...new Set(
+        (itemsRes.data || [])
+          .map((i: Item) => i.owner)
+          .filter((o): o is string => !!o && !known.has(o.toLowerCase()))
+      )];
+      if (orphans.length) console.warn("[dashboard] item owners with no matching user:", orphans);
+    } catch (e) {
+      console.error("Role lookup failed:", e);
+    }
+
     // Strategic signals — real 5-engine detector, scoped to the current project.
     try {
       const res = await fetch(`/api/dashboard/insights?project_id=${PROJECT_ID}`);
@@ -187,6 +210,19 @@ export default function Dashboard() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     loadData();
   }, []);
+
+  // Role gate: employees always get the personal home; managers can toggle to it.
+  if (!roleLoading && !isManager) {
+    return <EmployeeHome userName={myName} />;
+  }
+  if (!roleLoading && isManager && view === "personal") {
+    return (
+      <div className="mx-auto max-w-7xl px-4 pt-6 md:px-6">
+        <ViewToggle view={view} setView={setView} />
+        <EmployeeHome userName={myName} />
+      </div>
+    );
+  }
 
   if (loading) {
     return (
@@ -223,7 +259,10 @@ export default function Dashboard() {
     <div className="mx-auto max-w-7xl px-4 py-6 md:px-6">
       {/* Toolbar */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-xl font-semibold text-white">Dashboard</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-xl font-semibold text-white">Dashboard</h1>
+          <ViewToggle view={view} setView={setView} />
+        </div>
         <div className="flex items-center gap-2">
           <Link href="/review" className="relative rounded-lg border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-800">
             Review queue
@@ -471,5 +510,24 @@ function ItemCard({
         </button>
       )}
     </Link>
+  );
+}
+
+/** Personal | Team toggle for managers (employees never see the dashboard). */
+function ViewToggle({ view, setView }: { view: "team" | "personal"; setView: (v: "team" | "personal") => void }) {
+  return (
+    <div className="inline-flex rounded-lg border border-slate-800 bg-slate-950 p-0.5 text-xs">
+      {(["team", "personal"] as const).map((v) => (
+        <button
+          key={v}
+          onClick={() => setView(v)}
+          className={`rounded-md px-2.5 py-1 font-medium capitalize ${
+            view === v ? "bg-blue-600 text-white" : "text-slate-400 hover:text-slate-200"
+          }`}
+        >
+          {v}
+        </button>
+      ))}
+    </div>
   );
 }

@@ -45,6 +45,16 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "Settings", href: "/settings", icon: Settings },
 ];
 
+/** Simplified nav for employees/ICs — personal work only, no org-wide tools. */
+export const EMPLOYEE_NAV_ITEMS: NavItem[] = [
+  { label: "My Tasks", href: "/items", icon: ListTodo },
+  { label: "Meetings", href: "/meetings", icon: Mic },
+  { label: "Chat", href: "/chat", icon: MessageSquare, badge: "chat" },
+  { label: "Calendar", href: "/calendar", icon: Calendar },
+  { label: "Search", href: "/search", icon: Search },
+  { label: "Settings", href: "/settings", icon: Settings },
+];
+
 /** True when `pathname` belongs to the given nav `href`. */
 export function isActive(pathname: string, href: string): boolean {
   if (href === "/") return pathname === "/";

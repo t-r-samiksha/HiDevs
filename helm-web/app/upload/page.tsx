@@ -1,5 +1,7 @@
 "use client";
 
+import { useManagerGuard } from "../lib/useRole";
+
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
@@ -10,6 +12,7 @@ const ACCEPTED = ".mp3,.wav,.m4a,.webm";
 const MAX_MB = 25;
 
 export default function UploadPage() {
+  useManagerGuard();
   const router = useRouter();
 
   // Shared

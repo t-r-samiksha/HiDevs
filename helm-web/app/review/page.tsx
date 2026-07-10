@@ -1,5 +1,7 @@
 "use client";
 
+import { useManagerGuard } from "../lib/useRole";
+
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
@@ -37,6 +39,7 @@ const trustColor = (score: number) => {
 // ---------------------------------------------------------------------------
 
 export default function ReviewPage() {
+  useManagerGuard();
   const [items, setItems]       = useState<Item[]>([]);
   const [meetingTitles, setMeetingTitles] = useState<Map<string, string>>(new Map());
   const [loading, setLoading]   = useState(true);

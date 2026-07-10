@@ -106,6 +106,11 @@ export default function RoomPage() {
           const form = new FormData();
           form.append("file", blob, "meeting.webm");
           form.append("title", title);
+          // Jitsi's own speaker timeline → deterministic "[MM:SS] Name:" labels
+          // (no LLM/quota) once transcribed server-side.
+          if (speakerTimelineRef.current.length > 0) {
+            form.append("speakerTimeline", JSON.stringify(speakerTimelineRef.current));
+          }
           // Deterministic save: this endpoint ALWAYS creates the meeting + saves
           // the transcript, then extracts items best-effort. The meeting shows up
           // in Meetings even if extraction is thin.

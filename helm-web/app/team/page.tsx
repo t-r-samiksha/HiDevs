@@ -1,5 +1,7 @@
 "use client";
 
+import { useManagerGuard } from "../lib/useRole";
+
 import { useEffect, useState } from "react";
 import { Users } from "lucide-react";
 import { supabase } from "@/lib/supabase";
@@ -33,6 +35,7 @@ function downstream(rootId: string, users: User[]): User[] {
 }
 
 export default function TeamPage() {
+  useManagerGuard();
   const [rows, setRows] = useState<TeamRow[] | null>(null);
   const [scopeLabel, setScopeLabel] = useState<string>("");
   const [error, setError] = useState<string | null>(null);

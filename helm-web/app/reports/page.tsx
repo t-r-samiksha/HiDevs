@@ -1,5 +1,7 @@
 "use client";
 
+import { useManagerGuard } from "../lib/useRole";
+
 import { useEffect, useState } from "react";
 import { FileBarChart } from "lucide-react";
 import WeeklyReportCard, { type WeeklyReport } from "../components/reports/WeeklyReportCard";
@@ -26,6 +28,7 @@ function adaptReport(raw: any): WeeklyReport {
 }
 
 export default function ReportsPage() {
+  useManagerGuard();
   const [reports, setReports] = useState<WeeklyReport[] | null>(null);
   const [generating, setGenerating] = useState(false);
 

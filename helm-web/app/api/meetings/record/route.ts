@@ -5,6 +5,7 @@ import { google } from "@ai-sdk/google";
 import { embedMany } from "ai";
 import { extractionAgent } from "@/lib/mastra/agents/extraction-agent";
 import { ExtractionResultSchema } from "@/lib/mastra/schemas/item.schema";
+import { applySpeakerTimeline } from "@/lib/diarize";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -80,6 +81,23 @@ export async function POST(req: NextRequest) {
     const title = String(form.get("title") || "Live meeting");
     const project_id = String(form.get("project_id") || DEFAULT_PROJECT);
 
+    // Optional live Jitsi dominantSpeakerChanged timeline → deterministic speaker
+    // labels with NO LLM/quota (vs Gemini diarization, which 429s on free tier).
+    let speakerTimeline: Array<{ atMs: number; name: string }> | undefined;
+    const timelineRaw = form.get("speakerTimeline");
+    if (typeof timelineRaw === "string") {
+      try {
+        const parsed = JSON.parse(timelineRaw);
+        if (Array.isArray(parsed)) {
+          speakerTimeline = parsed.filter(
+            (e) => e && typeof e.atMs === "number" && typeof e.name === "string"
+          );
+        }
+      } catch {
+        /* ignore malformed timeline — falls back to [MM:SS] text */
+      }
+    }
+
     if (!(file instanceof File)) {
       return NextResponse.json({ error: "No audio file provided" }, { status: 400 });
     }
@@ -105,14 +123,23 @@ export async function POST(req: NextRequest) {
         if (groqRes.ok) {
           const result = await groqRes.json();
           if (Array.isArray(result.segments) && result.segments.length) {
-            transcript = result.segments
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              .map((s: any) => {
-                const m = Math.floor((s.start ?? 0) / 60);
-                const sec = Math.floor((s.start ?? 0) % 60);
-                return `[${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}] ${String(s.text ?? "").trim()}`;
-              })
-              .join("\n");
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const segs = result.segments.map((s: any) => ({
+              start: s.start ?? 0,
+              text: String(s.text ?? "").trim(),
+            }));
+            if (speakerTimeline && speakerTimeline.length > 0) {
+              // "[MM:SS] Name: text" via Jitsi's own speaker detection (no LLM).
+              transcript = applySpeakerTimeline(segs, speakerTimeline);
+            } else {
+              transcript = segs
+                .map((s: { start: number; text: string }) => {
+                  const m = Math.floor(s.start / 60);
+                  const sec = Math.floor(s.start % 60);
+                  return `[${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}] ${s.text}`;
+                })
+                .join("\n");
+            }
           } else {
             transcript = result.text ?? "";
           }

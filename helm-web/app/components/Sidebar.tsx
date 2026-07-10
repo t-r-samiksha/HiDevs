@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { NAV_ITEMS, isActive } from "./nav";
+import { NAV_ITEMS, EMPLOYEE_NAV_ITEMS, isActive } from "./nav";
+import { useRole } from "../lib/useRole";
 
 /**
  * Left navigation rail (250px on desktop, icons-only when collapsed).
@@ -19,6 +20,8 @@ export default function Sidebar({
   onClose: () => void;
 }) {
   const pathname = usePathname();
+  const { isManager } = useRole();
+  const navItems = isManager ? NAV_ITEMS : EMPLOYEE_NAV_ITEMS;
   const [collapsed, setCollapsed] = useState(false);
   const [unreadChat, setUnreadChat] = useState(0);
 
@@ -79,7 +82,7 @@ export default function Sidebar({
 
         {/* Nav links */}
         <nav className="flex-1 space-y-1 overflow-y-auto px-2 py-4">
-          {NAV_ITEMS.map((item) => {
+          {navItems.map((item) => {
             const active = isActive(pathname, item.href);
             const Icon = item.icon;
             return (
