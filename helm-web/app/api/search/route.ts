@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { google } from "@ai-sdk/google";
-import { GEMINI_MODEL_NAME } from "@/lib/model";
+import { GENERATION_MODEL_NAME, generationModel } from "@/lib/model";
 import { embed, generateText } from "ai";
 import { checkRateLimit, clientKey, sanitizeInput, securityHeaders } from "@/lib/security";
 import { withLLMTrace } from "@/lib/observability";
@@ -187,10 +187,10 @@ export async function POST(req: NextRequest) {
       const prompt = `Context:\n${contextStr}\n\nQuestion: ${query}`;
       // Trace the LLM call (latency, tokens, prompt hash, status).
       const { text: answer } = await withLLMTrace(
-        { model: GEMINI_MODEL_NAME, endpoint: "/api/search[ask]", prompt },
+        { model: GENERATION_MODEL_NAME, endpoint: "/api/search[ask]", prompt },
         () =>
           generateText({
-            model: google(GEMINI_MODEL_NAME),
+            model: generationModel,
             system: KNOWLEDGE_ASSISTANT_PROMPT,
             prompt,
           })

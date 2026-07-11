@@ -1,6 +1,6 @@
 import { generateText } from "ai";
 import { google } from "@ai-sdk/google";
-import { GEMINI_MODEL_NAME } from "@/lib/model";
+import { GEMINI_ONLY_MODEL_NAME } from "@/lib/model";
 
 function formatTime(seconds: number): string {
   const mins = Math.floor(seconds / 60);
@@ -81,7 +81,7 @@ Return ONLY a JSON array of exactly ${segments.length} strings (speaker labels o
 ${numbered}`;
 
   const { text } = await generateText({
-    model: google(GEMINI_MODEL_NAME),
+    model: google(GEMINI_ONLY_MODEL_NAME),
     // Diarization is a nice-to-have fallback, not core pipeline output —
     // don't burn ~20s retrying against a 429. Most quota exhaustion here is
     // a per-day cap (not per-minute), so retrying within seconds can't

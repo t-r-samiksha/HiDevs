@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { GEMINI_MODEL_NAME } from "@/lib/model";
+import { GENERATION_MODEL_NAME } from "@/lib/model";
 import { securityHeaders } from "@/lib/security";
 
 const supabase = createClient(
@@ -45,10 +45,17 @@ export async function GET() {
         supabase: { ok: supabaseOk, detail: supabaseDetail },
         qdrant: { ok: qdrantOk, detail: qdrantDetail, collection: COLLECTION },
         enkrypt: { ok: has("ENKRYPT_API_KEY"), detail: has("ENKRYPT_API_KEY") ? "API key configured" : "ENKRYPT_API_KEY missing" },
+        featherless: {
+          ok: has("FEATHERLESS_API_KEY"),
+          detail: has("FEATHERLESS_API_KEY") ? "API key configured (text generation)" : "FEATHERLESS_API_KEY missing",
+          model: GENERATION_MODEL_NAME,
+        },
         gemini: {
           ok: has("GOOGLE_GENERATIVE_AI_API_KEY"),
-          detail: has("GOOGLE_GENERATIVE_AI_API_KEY") ? "API key configured" : "GOOGLE_GENERATIVE_AI_API_KEY missing",
-          model: GEMINI_MODEL_NAME,
+          detail: has("GOOGLE_GENERATIVE_AI_API_KEY")
+            ? "API key configured (embeddings + audio diarization only)"
+            : "GOOGLE_GENERATIVE_AI_API_KEY missing",
+          model: "gemini-embedding-001",
         },
         groq: { ok: has("GROQ_API_KEY"), detail: has("GROQ_API_KEY") ? "API key configured" : "GROQ_API_KEY missing (transcription disabled)" },
         slack: { ok: has("SLACK_WEBHOOK_URL"), detail: has("SLACK_WEBHOOK_URL") ? "webhook configured" : "SLACK_WEBHOOK_URL not set (notifications off)" },
