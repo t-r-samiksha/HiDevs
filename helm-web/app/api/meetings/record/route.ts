@@ -198,7 +198,16 @@ export async function POST(req: NextRequest) {
     if (transcript.trim()) {
       try {
         const response = await extractionAgent.generate([{ role: "user", content: transcript }]);
-        const cleaned = response.text.replace(/```json|```/g, "").trim();
+        // Reasoning models (e.g. Qwen3 via Featherless) prefix output with a
+        // <think>...</think> block even for plain generation — extract from
+        // the first '{' to the last '}' rather than just stripping fences.
+        const rawText = response.text;
+        const firstBrace = rawText.indexOf("{");
+        const lastBrace = rawText.lastIndexOf("}");
+        const cleaned =
+          firstBrace !== -1 && lastBrace !== -1
+            ? rawText.slice(firstBrace, lastBrace + 1)
+            : rawText.replace(/```json|```/g, "").trim();
         const parsed = ExtractionResultSchema.safeParse(JSON.parse(cleaned));
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const items: any[] = parsed.success ? parsed.data.items : JSON.parse(cleaned).items || [];

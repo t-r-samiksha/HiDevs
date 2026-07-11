@@ -31,7 +31,16 @@ const GOLDEN_SET = {
 export async function POST() {
   try {
     const response = await extractionAgent.generate([{ role: "user", content: GOLDEN_TRANSCRIPT }]);
-    const cleaned = response.text.replace(/```json|```/g, "").trim();
+    // Reasoning models (e.g. Qwen3 via Featherless) prefix output with a
+    // <think>...</think> block even for plain generation — extract from the
+    // first '{' to the last '}' rather than just stripping code fences.
+    const rawText = response.text;
+    const firstBrace = rawText.indexOf("{");
+    const lastBrace = rawText.lastIndexOf("}");
+    const cleaned =
+      firstBrace !== -1 && lastBrace !== -1
+        ? rawText.slice(firstBrace, lastBrace + 1)
+        : rawText.replace(/```json|```/g, "").trim();
 
     let extracted: unknown[] = [];
     try {
