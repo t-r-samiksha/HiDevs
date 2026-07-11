@@ -16,6 +16,10 @@ const GROQ_URL = "https://api.groq.com/openai/v1/audio/transcriptions";
 const MAX_BYTES = 25 * 1024 * 1024;
 const DEFAULT_PROJECT = "a1b2c3d4-0000-0000-0000-000000000001";
 
+// Transcription + extraction can take a while — give the function room.
+export const runtime = "nodejs";
+export const maxDuration = 300;
+
 const qdrant = new QdrantVector({
   id: "helm-record",
   url: process.env.QDRANT_URL!,

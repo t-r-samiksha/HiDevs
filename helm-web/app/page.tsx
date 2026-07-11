@@ -159,6 +159,9 @@ export default function Dashboard() {
     setMeetings(meetingsRes.data || []);
     setContradictions(contradictionsRes.data || []);
     setPendingFollowups(followupRes.count ?? 0);
+    // Render the dashboard as soon as core data is in — the role lookup and the
+    // (slow, Gemini-backed) insights fetch below populate asynchronously.
+    setLoading(false);
 
     // Current user's role → drives the employee "Your tasks" view below.
     try {

@@ -93,7 +93,9 @@ export default function UploadPage() {
     try {
       setTranscribeStep("transcribing");
       const res = await fetch("/api/transcribe", { method: "POST", body: form });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({
+        error: "Transcription didn't return a valid response (it may have timed out). Try a smaller file.",
+      }));
 
       if (!res.ok) {
         setTranscribeError(data.error || "Transcription failed");
@@ -126,7 +128,12 @@ export default function UploadPage() {
         body: JSON.stringify({ title, transcript }),
       });
 
-      const data = await res.json();
+      // A timed-out serverless function returns a non-JSON error page — parse
+      // defensively so the user sees a real message, not "Unexpected token".
+      const data = await res.json().catch(() => ({
+        error:
+          "The pipeline didn't return a valid response — it likely timed out or hit the Gemini free-tier quota. Try a shorter transcript, or check your API key's quota.",
+      }));
 
       if (!res.ok) {
         setError(data.error || "Pipeline failed");

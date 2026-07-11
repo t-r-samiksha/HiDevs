@@ -66,7 +66,20 @@
   --color-slate-900: #151a23;
   --color-slate-950: #0b0e14;
 
-  /* Accent ramp (remaps blue-*) */
+  /* Gray ramp — mirror the graphite so gray-* pages (e.g. Upload) match */
+  --color-gray-50: #f3f5f8;
+  --color-gray-100: #e7eaf0;
+  --color-gray-200: #d4d9e1;
+  --color-gray-300: #b9c0cc;
+  --color-gray-400: #9aa3b2;
+  --color-gray-500: #626b7b;
+  --color-gray-600: #4a5464;
+  --color-gray-700: #333c4a;
+  --color-gray-800: #232a36;
+  --color-gray-900: #151a23;
+  --color-gray-950: #0b0e14;
+
+  /* Accent ramp (remaps blue-* and indigo-* and teal-*) */
   --color-blue-300: #b3bcfa;
   --color-blue-400: #a5aef8;
   --color-blue-500: #7b87f0;
@@ -75,6 +88,14 @@
   --color-blue-800: #3a4080;
   --color-blue-900: #262b54;
   --color-blue-950: #191d38;
+  --color-indigo-400: #a5aef8;
+  --color-indigo-500: #7b87f0;
+  --color-indigo-600: #7b87f0;
+  --color-indigo-700: #8f9af6;
+  --color-teal-400: #59c1d4;
+  --color-teal-500: #3fb0c6;
+  --color-teal-800: #123a41;
+  --color-teal-900: #0e2c31;
 
   /* Success (emerald + green) */
   --color-emerald-300: #6fd3a6;

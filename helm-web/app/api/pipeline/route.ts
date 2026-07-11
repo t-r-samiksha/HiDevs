@@ -13,6 +13,12 @@ import { MASTRA_GEMINI_MODEL, GEMINI_MODEL_NAME } from "@/lib/model";
 import { withLLMTrace } from "@/lib/observability";
 import { checkRateLimit, sanitizeInput } from "@/lib/security";
 
+// This route runs many sequential LLM + Enkrypt + Qdrant calls, so it needs a
+// long execution window. Vercel Hobby caps at 60s; Pro/Enterprise honour up to
+// 300s. On a platform without a hard cap (e.g. Railway) it runs to completion.
+export const runtime = "nodejs";
+export const maxDuration = 300;
+
 // ---------------------------------------------------------------------------
 // Clients
 // ---------------------------------------------------------------------------

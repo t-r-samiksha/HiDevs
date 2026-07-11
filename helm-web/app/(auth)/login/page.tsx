@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
@@ -10,7 +10,20 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    // After clicking the email confirmation link, Supabase lands here. If it
+    // established a session, go straight in; otherwise show a "verified" note.
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("verified") === "1") {
+      setNotice("Email confirmed. You can sign in now.");
+    }
+    supabase.auth.getSession().then(({ data }) => {
+      if (data.session) router.replace("/");
+    });
+  }, [router]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -32,6 +45,11 @@ export default function LoginPage() {
     >
       <h2 className="text-lg font-semibold text-white">Sign in</h2>
 
+      {notice && (
+        <div className="rounded-lg border border-green-800 bg-green-950 px-3 py-2 text-sm text-green-300">
+          {notice}
+        </div>
+      )}
       {error && (
         <div className="rounded-lg border border-red-800 bg-red-950 px-3 py-2 text-sm text-red-300">
           {error}

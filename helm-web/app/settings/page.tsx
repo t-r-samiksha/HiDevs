@@ -149,15 +149,19 @@ export default function SettingsPage() {
         </div>
       )}
 
-      {/* Project */}
-      <Section title="Project">
+      {/* Workspace */}
+      <Section title="Workspace">
+        <p className="-mt-2 mb-4 text-xs text-slate-500">
+          Your team&apos;s workspace — the name and description shown across Helm (reports, briefs, and the meetings that belong to this team).
+        </p>
         {project ? (
           <div className="space-y-3">
-            <Labeled label="Name">
+            <Labeled label="Workspace name">
               <input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="e.g. Platform Team"
+                className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </Labeled>
             <Labeled label="Description">
@@ -165,7 +169,8 @@ export default function SettingsPage() {
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 rows={2}
-                className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="What this team works on — used as context in briefs and reports."
+                className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </Labeled>
             <button
@@ -173,14 +178,14 @@ export default function SettingsPage() {
               disabled={savingProject}
               className="rounded-lg bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
             >
-              {savingProject ? "Saving…" : "Save project"}
+              {savingProject ? "Saving…" : "Save workspace"}
             </button>
-            <p className="pt-1 text-xs text-slate-600">
-              Default project_id (read-only): <span className="font-mono text-slate-500">{PROJECT_ID}</span>
+            <p className="pt-1 font-mono text-xs text-slate-600">
+              workspace id: {PROJECT_ID}
             </p>
           </div>
         ) : (
-          <p className="text-sm text-slate-500">No project found.</p>
+          <p className="text-sm text-slate-500">No workspace found.</p>
         )}
       </Section>
 

@@ -26,7 +26,12 @@ export default function SignupPage() {
     const { data, error: signUpErr } = await supabase.auth.signUp({
       email,
       password,
-      options: { data: { name, role } },
+      options: {
+        data: { name, role },
+        // Send the confirmation link back to THIS deployment (not localhost).
+        // Supabase still requires this URL to be allow-listed in the dashboard.
+        emailRedirectTo: `${window.location.origin}/login?verified=1`,
+      },
     });
 
     if (signUpErr) {
