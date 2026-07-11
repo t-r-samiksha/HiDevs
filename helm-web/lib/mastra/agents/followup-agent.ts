@@ -1,5 +1,5 @@
 import { Agent } from "@mastra/core/agent";
-import { MASTRA_GEMINI_MODEL } from "@/lib/model";
+import { generationModel } from "@/lib/model";
 
 /**
  * Drafts short professional follow-up nudges for overdue/at-risk items.
@@ -7,7 +7,7 @@ import { MASTRA_GEMINI_MODEL } from "@/lib/model";
 export const followupAgent = new Agent({
   id: "followup-agent",
   name: "Follow-up Agent",
-  model: MASTRA_GEMINI_MODEL,
+  model: generationModel,
   instructions: `You draft short, professional follow-up messages for overdue or at-risk tasks.
 
 You will receive structured context about the item. Your job is to write a

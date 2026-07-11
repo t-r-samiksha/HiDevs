@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { Agent } from "@mastra/core/agent";
-import { createTool } from "@mastra/core/tools";
 import { QdrantVector } from "@mastra/qdrant";
 import { google } from "@ai-sdk/google";
 import { embed, embedMany } from "ai";
@@ -9,7 +8,7 @@ import { z } from "zod";
 import { addSpeakerLabels, applySpeakerTimeline } from "@/lib/diarize";
 import { ExtractionResultSchema } from "@/lib/mastra/schemas/item.schema";
 import { scoreExtraction } from "@/lib/mastra/scorers/extraction-scorers";
-import { MASTRA_GEMINI_MODEL, GEMINI_MODEL_NAME } from "@/lib/model";
+import { generationModel, GENERATION_MODEL_NAME } from "@/lib/model";
 import { withLLMTrace } from "@/lib/observability";
 import { checkRateLimit, sanitizeInput } from "@/lib/security";
 
@@ -43,11 +42,17 @@ const embeddingModel = google.textEmbeddingModel("gemini-embedding-001");
 
 // ---------------------------------------------------------------------------
 // Extraction agent (inline — avoids cross-package import from Mastra backend)
+// This is the only LLM call left in the pipeline. It's plain text generation
+// (no tool-calling), so it doesn't need Gemini's constrained-decoding
+// guarantee the way multi-tool orchestration did — see lib/model.ts for why
+// the pipeline used to run a supervisor agent that dynamically chose which
+// of 7 tools to call next, and why that was replaced with the plain
+// sequential code below.
 // ---------------------------------------------------------------------------
 const extractionAgent = new Agent({
   id: "extraction-agent",
   name: "Extraction Agent",
-  model: MASTRA_GEMINI_MODEL,
+  model: generationModel,
   instructions: `
 You read a meeting transcript and extract every DECISION and ACTION ITEM —
 including ones that are uncertain, secondhand, or hedged ("I think someone
@@ -239,7 +244,7 @@ async function qdrantRawSearch(
 }
 
 // ---------------------------------------------------------------------------
-// Zod schemas shared by tools
+// Zod schemas shared by pipeline steps
 // ---------------------------------------------------------------------------
 const ExtractedItemSchema = z.object({
   type: z.enum(["decision", "action_item"]),
@@ -270,7 +275,7 @@ const ScoredItemSchema = ExtractedItemSchema.extend({
 });
 
 // StoredItemSchema includes dependency_hints so they can be forwarded to the
-// dependency-resolution tool without a round-trip to Supabase.
+// dependency-resolution step without a round-trip to Supabase.
 const StoredItemSchema = z.object({
   id: z.string(),
   text: z.string(),
@@ -282,11 +287,14 @@ const StoredItemSchema = z.object({
   dependency_hints: z.array(z.string()),
 });
 
+type ExtractedItem = z.infer<typeof ExtractedItemSchema>;
+type ScoredItem = z.infer<typeof ScoredItemSchema>;
+type StoredItem = z.infer<typeof StoredItemSchema>;
+
 // ---------------------------------------------------------------------------
 // Enkrypt Checkpoint 1: prompt-injection check on the raw transcript.
-// Called directly from the route handler (NOT as an agent tool) so the halt
-// is a real code-level branch, not something the LLM orchestrator merely
-// promises to respect in its instructions.
+// Called directly from the route handler so the halt is a real code-level
+// branch.
 // ---------------------------------------------------------------------------
 async function runInjectionCheck(text: string): Promise<{ safe: boolean; confidence: number }> {
   const r = await enkryptPost("/guardrails/detect", {
@@ -299,130 +307,126 @@ async function runInjectionCheck(text: string): Promise<{ safe: boolean; confide
 }
 
 // ---------------------------------------------------------------------------
-// Tool 2: Extract items
+// Step 2: Extract items
 // ---------------------------------------------------------------------------
-const runExtractionTool = createTool({
-  id: "run-extraction",
-  description:
-    "Extract every decision and action item from the transcript using the Helm extraction agent.",
-  inputSchema: z.object({ transcript: z.string() }),
-  outputSchema: z.object({ items: z.array(ExtractedItemSchema) }),
-  execute: async (inputData) => {
-    const RETRY_DELAYS = [5_000, 15_000, 30_000];
-    let response: Awaited<ReturnType<typeof extractionAgent.generate>> | undefined;
+async function runExtraction(transcript: string): Promise<{ items: ExtractedItem[] }> {
+  const RETRY_DELAYS = [5_000, 15_000, 30_000];
+  let response: Awaited<ReturnType<typeof extractionAgent.generate>> | undefined;
 
-    for (let attempt = 0; ; attempt++) {
-      try {
-        response = await withLLMTrace(
-          { model: GEMINI_MODEL_NAME, endpoint: "/api/pipeline", label: "pipeline-extraction" },
-          () => extractionAgent.generate([{ role: "user", content: inputData.transcript }])
-        );
-        break;
-      } catch (err: any) {
-        const msg = String(err?.message || "");
-        const isThrottle = msg.includes("high demand") || msg.includes("429") || err?.status === 429;
-        // A daily free-tier quota exhaustion won't recover in seconds — don't
-        // burn minutes retrying it; fail fast so the caller degrades gracefully.
-        const isDailyQuota =
-          msg.includes("free_tier") || msg.includes("PerDay") || msg.includes("RESOURCE_EXHAUSTED");
-        if (!isThrottle || isDailyQuota || attempt >= RETRY_DELAYS.length) throw err;
-        await new Promise((r) => setTimeout(r, RETRY_DELAYS[attempt]));
-      }
-    }
-
-    const cleaned = response!.text.replace(/```json|```/g, "").trim();
-    const parsed = JSON.parse(cleaned);
-
-    // FIX 5 — schema-enforce the extraction output against the shared Zod
-    // contract. On failure we log and fall back gracefully (keep the parsed
-    // items) rather than dropping the extraction.
-    const validation = ExtractionResultSchema.safeParse({ items: parsed.items || [] });
-    if (!validation.success) {
-      console.warn(
-        "[pipeline] extraction failed schema validation:",
-        JSON.stringify(validation.error.issues.slice(0, 5))
-      );
-    }
-
-    // FIX 4 — run the Mastra extraction scorers live on this extraction. No
-    // golden set exists at runtime, so source_quote presence is the meaningful
-    // signal; the point is that the real scorers EXECUTE in the live pipeline.
+  for (let attempt = 0; ; attempt++) {
     try {
-      const scores = await scoreExtraction(cleaned);
-      console.log("[pipeline] extraction scorers:", JSON.stringify(scores));
-    } catch (e) {
-      console.error("[pipeline] scorer run failed:", e);
+      response = await withLLMTrace(
+        { model: GENERATION_MODEL_NAME, endpoint: "/api/pipeline", label: "pipeline-extraction" },
+        () => extractionAgent.generate([{ role: "user", content: transcript }])
+      );
+      break;
+    } catch (err: any) {
+      const msg = String(err?.message || "");
+      const isThrottle = msg.includes("high demand") || msg.includes("429") || err?.status === 429;
+      // A daily free-tier quota exhaustion won't recover in seconds — don't
+      // burn minutes retrying it; fail fast so the caller degrades gracefully.
+      const isDailyQuota =
+        msg.includes("free_tier") || msg.includes("PerDay") || msg.includes("RESOURCE_EXHAUSTED");
+      if (!isThrottle || isDailyQuota || attempt >= RETRY_DELAYS.length) throw err;
+      await new Promise((r) => setTimeout(r, RETRY_DELAYS[attempt]));
     }
+  }
 
-    return { items: parsed.items || [] };
-  },
-});
+  // Reasoning models (e.g. Qwen3 via Featherless) prefix output with a
+  // <think>...</think> block even for plain non-tool-calling generation.
+  // Stripping fenced code blocks isn't enough on its own, so extract from
+  // the first '{' to the last '}' — robust to any preamble/postamble noise
+  // regardless of tag format.
+  const raw = response!.text;
+  const firstBrace = raw.indexOf("{");
+  const lastBrace = raw.lastIndexOf("}");
+  const cleaned =
+    firstBrace !== -1 && lastBrace !== -1
+      ? raw.slice(firstBrace, lastBrace + 1)
+      : raw.replace(/```json|```/g, "").trim();
+  const parsed = JSON.parse(cleaned);
+
+  // FIX 5 — schema-enforce the extraction output against the shared Zod
+  // contract. On failure we log and fall back gracefully (keep the parsed
+  // items) rather than dropping the extraction.
+  const validation = ExtractionResultSchema.safeParse({ items: parsed.items || [] });
+  if (!validation.success) {
+    console.warn(
+      "[pipeline] extraction failed schema validation:",
+      JSON.stringify(validation.error.issues.slice(0, 5))
+    );
+  }
+
+  // FIX 4 — run the Mastra extraction scorers live on this extraction. No
+  // golden set exists at runtime, so source_quote presence is the meaningful
+  // signal; the point is that the real scorers EXECUTE in the live pipeline.
+  try {
+    const scores = await scoreExtraction(cleaned);
+    console.log("[pipeline] extraction scorers:", JSON.stringify(scores));
+  } catch (e) {
+    console.error("[pipeline] scorer run failed:", e);
+  }
+
+  return { items: parsed.items || [] };
+}
 
 // ---------------------------------------------------------------------------
-// Tool 3: Trust-score every item (Enkrypt Checkpoints 2 + 3)
+// Step 3: Trust-score every item (Enkrypt Checkpoints 2 + 3)
 // ---------------------------------------------------------------------------
-const scoreTrustItemsTool = createTool({
-  id: "score-trust-items",
-  description:
-    "Run Enkrypt adherence + relevancy on each item. " +
-    "Returns items with trust_score and review_state.",
-  inputSchema: z.object({
-    items: z.array(ExtractedItemSchema),
-    transcript: z.string(),
-    meeting_title: z.string(),
-  }),
-  outputSchema: z.object({ scored_items: z.array(ScoredItemSchema) }),
-  execute: async (inputData) => {
-    const { items, transcript, meeting_title } = inputData;
-    const relevancyQ = `What decisions and action items were discussed in "${meeting_title}"?`;
-    const scored: z.infer<typeof ScoredItemSchema>[] = [];
+async function scoreTrustItems(input: {
+  items: ExtractedItem[];
+  transcript: string;
+  meeting_title: string;
+}): Promise<{ scored_items: ScoredItem[] }> {
+  const { items, transcript, meeting_title } = input;
+  const relevancyQ = `What decisions and action items were discussed in "${meeting_title}"?`;
+  const scored: ScoredItem[] = [];
 
-    for (const item of items) {
-      const ctx = buildAdherenceContext(transcript, item.source_quote || "");
-      const adherenceR = await enkryptPost("/guardrails/adherence", {
-        context: ctx,
-        llm_answer: item.text,
-      });
-      const adherenceScore = parseFloat(adherenceR.summary?.adherence_score) || 0;
-      const adherent = adherenceScore === 1.0;
+  for (const item of items) {
+    const ctx = buildAdherenceContext(transcript, item.source_quote || "");
+    const adherenceR = await enkryptPost("/guardrails/adherence", {
+      context: ctx,
+      llm_answer: item.text,
+    });
+    const adherenceScore = parseFloat(adherenceR.summary?.adherence_score) || 0;
+    const adherent = adherenceScore === 1.0;
 
-      const relevancyR = await enkryptPost("/guardrails/relevancy", {
-        question: relevancyQ,
-        llm_answer: item.text,
-      });
-      const relevancyScore = parseFloat(relevancyR.summary?.relevancy_score) || 0;
-      const relevant = relevancyScore === 1.0;
+    const relevancyR = await enkryptPost("/guardrails/relevancy", {
+      question: relevancyQ,
+      llm_answer: item.text,
+    });
+    const relevancyScore = parseFloat(relevancyR.summary?.relevancy_score) || 0;
+    const relevant = relevancyScore === 1.0;
 
-      // Four trust tiers:
-      //   0.9  adherent + relevant          → auto
-      //   0.7  adherent, off-topic          → pending_review
-      //   0.4  adherent, off-topic + dollar → quarantined (unverifiable financial claim)
-      //   0.0  not adherent                 → quarantined (hallucination)
-      const hasFinancialClaim = /\$\d/.test(item.text);
-      const trust_score = !adherent ? 0.0 : relevant ? 0.9 : hasFinancialClaim ? 0.4 : 0.7;
-      const review_state =
-        trust_score >= 0.85
-          ? "auto"
-          : trust_score >= 0.6
-          ? "pending_review"
-          : "quarantined";
+    // Four trust tiers:
+    //   0.9  adherent + relevant          → auto
+    //   0.7  adherent, off-topic          → pending_review
+    //   0.4  adherent, off-topic + dollar → quarantined (unverifiable financial claim)
+    //   0.0  not adherent                 → quarantined (hallucination)
+    const hasFinancialClaim = /\$\d/.test(item.text);
+    const trust_score = !adherent ? 0.0 : relevant ? 0.9 : hasFinancialClaim ? 0.4 : 0.7;
+    const review_state =
+      trust_score >= 0.85
+        ? "auto"
+        : trust_score >= 0.6
+        ? "pending_review"
+        : "quarantined";
 
-      scored.push({
-        ...item,
-        trust_score,
-        review_state,
-        enkrypt_checks: {
-          adherence_score: adherenceScore,
-          relevancy_score: relevancyScore,
-          financial_claim: hasFinancialClaim,
-        },
-      });
-      await new Promise((r) => setTimeout(r, 800));
-    }
+    scored.push({
+      ...item,
+      trust_score,
+      review_state,
+      enkrypt_checks: {
+        adherence_score: adherenceScore,
+        relevancy_score: relevancyScore,
+        financial_claim: hasFinancialClaim,
+      },
+    });
+    await new Promise((r) => setTimeout(r, 800));
+  }
 
-    return { scored_items: scored };
-  },
-});
+  return { scored_items: scored };
+}
 
 // ---------------------------------------------------------------------------
 // Enkrypt Checkpoint 3: real PII detection call. Enkrypt's PII detector
@@ -461,431 +465,337 @@ async function enkryptPiiCheck(text: string): Promise<boolean> {
 }
 
 // ---------------------------------------------------------------------------
-// Tool 4: PII redaction — Enkrypt Checkpoint 3
+// Step 4: PII redaction — Enkrypt Checkpoint 3
 // Runs AFTER trust scoring and BEFORE any data reaches Supabase or Qdrant.
 // ---------------------------------------------------------------------------
-const piiRedactTool = createTool({
-  id: "redact-pii",
-  description:
-    "Run Enkrypt's PII detector on each item's text and source_quote, then redact " +
-    "matches (emails, phones, credit cards, Aadhaar, PAN) with [REDACTED_*] tokens. " +
-    "This is Enkrypt Checkpoint 3 — run after trust scoring, before persistence.",
-  inputSchema: z.object({ items: z.array(ScoredItemSchema) }),
-  outputSchema: z.object({
-    redacted_items: z.array(ScoredItemSchema),
-    pii_found: z.number(),
-    enkrypt_pii_flagged: z.number(),
-  }),
-  execute: async (inputData) => {
-    let totalFound = 0;
-    let enkryptFlagged = 0;
-    const redacted_items: z.infer<typeof ScoredItemSchema>[] = [];
+async function piiRedact(input: { items: ScoredItem[] }): Promise<{
+  redacted_items: ScoredItem[];
+  pii_found: number;
+  enkrypt_pii_flagged: number;
+}> {
+  let totalFound = 0;
+  let enkryptFlagged = 0;
+  const redacted_items: ScoredItem[] = [];
 
-    for (const item of inputData.items) {
-      const [textFlagged, quoteFlagged] = await Promise.all([
-        enkryptPiiCheck(item.text),
-        enkryptPiiCheck(item.source_quote),
-      ]);
-      if (textFlagged || quoteFlagged) enkryptFlagged++;
+  for (const item of input.items) {
+    const [textFlagged, quoteFlagged] = await Promise.all([
+      enkryptPiiCheck(item.text),
+      enkryptPiiCheck(item.source_quote),
+    ]);
+    if (textFlagged || quoteFlagged) enkryptFlagged++;
 
-      const textResult = redactPII(item.text);
-      const quoteResult = redactPII(item.source_quote);
-      totalFound += textResult.count + quoteResult.count;
+    const textResult = redactPII(item.text);
+    const quoteResult = redactPII(item.source_quote);
+    totalFound += textResult.count + quoteResult.count;
 
-      if ((textFlagged || quoteFlagged) && textResult.count === 0 && quoteResult.count === 0) {
-        console.warn(
-          `Enkrypt flagged PII that the local regex missed in item: "${item.text.slice(0, 60)}…"`
-        );
-      }
-
-      redacted_items.push({ ...item, text: textResult.redacted, source_quote: quoteResult.redacted });
+    if ((textFlagged || quoteFlagged) && textResult.count === 0 && quoteResult.count === 0) {
+      console.warn(
+        `Enkrypt flagged PII that the local regex missed in item: "${item.text.slice(0, 60)}…"`
+      );
     }
 
-    return { redacted_items, pii_found: totalFound, enkrypt_pii_flagged: enkryptFlagged };
-  },
-});
+    redacted_items.push({ ...item, text: textResult.redacted, source_quote: quoteResult.redacted });
+  }
+
+  return { redacted_items, pii_found: totalFound, enkrypt_pii_flagged: enkryptFlagged };
+}
 
 // ---------------------------------------------------------------------------
-// Tool 5: Persist to Supabase + embed items to Qdrant (meeting_items)
+// Step 5: Persist to Supabase + embed items to Qdrant (meeting_items)
 // ---------------------------------------------------------------------------
-const persistPipelineTool = createTool({
-  id: "persist-pipeline",
-  description:
-    "Create a meeting record in Supabase, store all scored items, and embed them to Qdrant.",
-  inputSchema: z.object({
-    meeting_title: z.string(),
-    transcript: z.string(),
-    scored_items: z.array(ScoredItemSchema),
-  }),
-  outputSchema: z.object({
-    meeting_id: z.string(),
-    stored_items: z.array(StoredItemSchema),
-    items_auto: z.number(),
-    items_review: z.number(),
-    items_quarantined: z.number(),
-  }),
-  execute: async (inputData) => {
-    const { meeting_title, transcript, scored_items } = inputData;
+async function persistPipeline(input: {
+  meeting_title: string;
+  transcript: string;
+  scored_items: ScoredItem[];
+}): Promise<{
+  meeting_id: string;
+  stored_items: StoredItem[];
+  items_auto: number;
+  items_review: number;
+  items_quarantined: number;
+}> {
+  const { meeting_title, transcript, scored_items } = input;
 
-    const { data: meeting, error: meetingErr } = await supabase
-      .from("meetings")
-      .insert({
-        title: meeting_title,
-        date: new Date().toISOString(),
-        source_type: "upload",
-        transcript_text: transcript,
-        project_id: PROJECT_ID,
-      })
+  const { data: meeting, error: meetingErr } = await supabase
+    .from("meetings")
+    .insert({
+      title: meeting_title,
+      date: new Date().toISOString(),
+      source_type: "upload",
+      transcript_text: transcript,
+      project_id: PROJECT_ID,
+    })
+    .select()
+    .single();
+  if (meetingErr) throw new Error(meetingErr.message);
+
+  const storedItems: StoredItem[] = [];
+
+  for (const item of scored_items) {
+    const basePayload = {
+      meeting_id: meeting.id,
+      project_id: PROJECT_ID,
+      type: item.type,
+      text: item.text,
+      owner: item.owner || null,
+      deadline_raw: item.deadline?.raw || null,
+      deadline_iso: item.deadline?.resolved_iso || null,
+      status: "open",
+      trust_score: item.trust_score,
+      review_state: item.review_state,
+      source_quote: item.source_quote,
+      source_timestamp: item.source_timestamp || null,
+      dependency_hints: item.dependency_hints || [],
+      supersedes_hint: item.supersedes_hint || null,
+    };
+
+    // Store the real per-check Enkrypt breakdown so /api/items/[id]/trust
+    // can return actual data instead of guessing from trust_score alone.
+    // Falls back gracefully if the enkrypt_checks column hasn't been added
+    // yet (see the DDL in /api/setup-db) — never blocks item persistence.
+    let { data: dbItem, error: insertErr } = await supabase
+      .from("items")
+      .insert({ ...basePayload, enkrypt_checks: item.enkrypt_checks })
       .select()
       .single();
-    if (meetingErr) throw new Error(meetingErr.message);
 
-    const storedItems: z.infer<typeof StoredItemSchema>[] = [];
-
-    for (const item of scored_items) {
-      const basePayload = {
-        meeting_id: meeting.id,
-        project_id: PROJECT_ID,
-        type: item.type,
-        text: item.text,
-        owner: item.owner || null,
-        deadline_raw: item.deadline?.raw || null,
-        deadline_iso: item.deadline?.resolved_iso || null,
-        status: "open",
-        trust_score: item.trust_score,
-        review_state: item.review_state,
-        source_quote: item.source_quote,
-        source_timestamp: item.source_timestamp || null,
-        dependency_hints: item.dependency_hints || [],
-        supersedes_hint: item.supersedes_hint || null,
-      };
-
-      // Store the real per-check Enkrypt breakdown so /api/items/[id]/trust
-      // can return actual data instead of guessing from trust_score alone.
-      // Falls back gracefully if the enkrypt_checks column hasn't been added
-      // yet (see the DDL in /api/setup-db) — never blocks item persistence.
-      let { data: dbItem, error: insertErr } = await supabase
-        .from("items")
-        .insert({ ...basePayload, enkrypt_checks: item.enkrypt_checks })
-        .select()
-        .single();
-
-      if (insertErr?.message?.includes("Could not find")) {
-        ({ data: dbItem } = await supabase.from("items").insert(basePayload).select().single());
-      }
-
-      if (dbItem) {
-        storedItems.push({
-          id: dbItem.id,
-          text: dbItem.text,
-          type: dbItem.type,
-          owner: dbItem.owner,
-          trust_score: dbItem.trust_score,
-          review_state: dbItem.review_state,
-          supersedes_hint: dbItem.supersedes_hint,
-          dependency_hints: dbItem.dependency_hints || [],
-        });
-      }
-      await new Promise((r) => setTimeout(r, 800));
+    if (insertErr?.message?.includes("Could not find")) {
+      ({ data: dbItem } = await supabase.from("items").insert(basePayload).select().single());
     }
 
-    // Enkrypt Checkpoint 2 hard gate: quarantined items are still written to
-    // Supabase (so a human can triage them in /review — never silently
-    // dropped), but they must NEVER enter Qdrant. Embedding them would let a
-    // quarantined hallucination surface in search, ask-mode citations, or
-    // dependency resolution before a human has cleared it.
-    const embeddableItems = storedItems.filter((it) => it.review_state !== "quarantined");
-
-    if (embeddableItems.length > 0) {
-      const textsToEmbed = embeddableItems.map(
-        (it) => `[${it.type}] ${it.text}${it.owner ? ` (owner: ${it.owner})` : ""}`
-      );
-      const { embeddings } = await withLLMTrace(
-        { model: "gemini-embedding-001", endpoint: "/api/pipeline", label: "pipeline-embedding" },
-        () => embedMany({ model: embeddingModel, values: textsToEmbed })
-      );
-      // Include project_id in payload so dependency resolution can filter by it
-      const metadata = embeddableItems.map((it) => ({
-        item_id: it.id,
-        text: it.text,
-        type: it.type,
-        meeting_id: meeting.id,
-        meeting_title,
-        owner: it.owner || "unassigned",
-        trust_score: it.trust_score,
-        review_state: it.review_state,
-        project_id: PROJECT_ID,
-        supersedes_hint: it.supersedes_hint || "",
-      }));
-      await qdrant.upsert({ indexName: COLLECTION, vectors: embeddings, metadata });
+    if (dbItem) {
+      storedItems.push({
+        id: dbItem.id,
+        text: dbItem.text,
+        type: dbItem.type,
+        owner: dbItem.owner,
+        trust_score: dbItem.trust_score,
+        review_state: dbItem.review_state,
+        supersedes_hint: dbItem.supersedes_hint,
+        dependency_hints: dbItem.dependency_hints || [],
+      });
     }
+    await new Promise((r) => setTimeout(r, 800));
+  }
 
-    return {
+  // Enkrypt Checkpoint 2 hard gate: quarantined items are still written to
+  // Supabase (so a human can triage them in /review — never silently
+  // dropped), but they must NEVER enter Qdrant. Embedding them would let a
+  // quarantined hallucination surface in search, ask-mode citations, or
+  // dependency resolution before a human has cleared it.
+  const embeddableItems = storedItems.filter((it) => it.review_state !== "quarantined");
+
+  if (embeddableItems.length > 0) {
+    const textsToEmbed = embeddableItems.map(
+      (it) => `[${it.type}] ${it.text}${it.owner ? ` (owner: ${it.owner})` : ""}`
+    );
+    const { embeddings } = await withLLMTrace(
+      { model: "gemini-embedding-001", endpoint: "/api/pipeline", label: "pipeline-embedding" },
+      () => embedMany({ model: embeddingModel, values: textsToEmbed })
+    );
+    // Include project_id in payload so dependency resolution can filter by it
+    const metadata = embeddableItems.map((it) => ({
+      item_id: it.id,
+      text: it.text,
+      type: it.type,
       meeting_id: meeting.id,
-      stored_items: storedItems,
-      items_auto: storedItems.filter((i) => i.review_state === "auto").length,
-      items_review: storedItems.filter((i) => i.review_state === "pending_review").length,
-      items_quarantined: storedItems.filter((i) => i.review_state === "quarantined").length,
-    };
-  },
-});
+      meeting_title,
+      owner: it.owner || "unassigned",
+      trust_score: it.trust_score,
+      review_state: it.review_state,
+      project_id: PROJECT_ID,
+      supersedes_hint: it.supersedes_hint || "",
+    }));
+    await qdrant.upsert({ indexName: COLLECTION, vectors: embeddings, metadata });
+  }
+
+  return {
+    meeting_id: meeting.id,
+    stored_items: storedItems,
+    items_auto: storedItems.filter((i) => i.review_state === "auto").length,
+    items_review: storedItems.filter((i) => i.review_state === "pending_review").length,
+    items_quarantined: storedItems.filter((i) => i.review_state === "quarantined").length,
+  };
+}
 
 // ---------------------------------------------------------------------------
-// Tool 6: Chunk transcript and embed to transcript_chunks (P2-8)
+// Step 6: Chunk transcript and embed to transcript_chunks (P2-8)
 // Creates the collection if it doesn't exist (3072 dims, cosine metric).
 // Chunks by 45-second windows or max 6 lines, whichever comes first.
 // ---------------------------------------------------------------------------
-const embedTranscriptChunksTool = createTool({
-  id: "embed-transcript-chunks",
-  description:
-    "Split the transcript into speaker-turn / time-window chunks, embed each with " +
-    "gemini-embedding-001, and upsert to the transcript_chunks Qdrant collection.",
-  inputSchema: z.object({
-    transcript: z.string(),
-    meeting_id: z.string(),
-    meeting_title: z.string(),
-  }),
-  outputSchema: z.object({ chunks_stored: z.number() }),
-  execute: async (inputData) => {
-    const { transcript, meeting_id, meeting_title } = inputData;
-    const chunks = chunkTranscript(transcript);
-    if (chunks.length === 0) return { chunks_stored: 0 };
+async function embedTranscriptChunks(input: {
+  transcript: string;
+  meeting_id: string;
+  meeting_title: string;
+}): Promise<{ chunks_stored: number }> {
+  const { transcript, meeting_id, meeting_title } = input;
+  const chunks = chunkTranscript(transcript);
+  if (chunks.length === 0) return { chunks_stored: 0 };
 
-    // Ensure collection exists (idempotent — catch "already exists" errors)
-    try {
-      await qdrant.createIndex({
-        indexName: CHUNKS_COLLECTION,
-        dimension: 3072,
-        metric: "cosine",
-      });
-    } catch {
-      // Collection already exists — fine
-    }
-
-    const { embeddings } = await withLLMTrace(
-      { model: "gemini-embedding-001", endpoint: "/api/pipeline", label: "pipeline-chunk-embedding" },
-      () => embedMany({ model: embeddingModel, values: chunks.map((c) => c.text) })
-    );
-
-    const metadata = chunks.map((chunk, i) => ({
-      chunk_text: chunk.text,
-      meeting_id,
-      meeting_title,
-      chunk_index: i,
-      start_time: chunk.startTime,
-      end_time: chunk.endTime,
-      project_id: PROJECT_ID,
-    }));
-
-    await qdrant.upsert({
+  // Ensure collection exists (idempotent — catch "already exists" errors)
+  try {
+    await qdrant.createIndex({
       indexName: CHUNKS_COLLECTION,
-      vectors: embeddings,
-      metadata,
+      dimension: 3072,
+      metric: "cosine",
     });
+  } catch {
+    // Collection already exists — fine
+  }
 
-    return { chunks_stored: chunks.length };
-  },
-});
+  const { embeddings } = await withLLMTrace(
+    { model: "gemini-embedding-001", endpoint: "/api/pipeline", label: "pipeline-chunk-embedding" },
+    () => embedMany({ model: embeddingModel, values: chunks.map((c) => c.text) })
+  );
+
+  const metadata = chunks.map((chunk, i) => ({
+    chunk_text: chunk.text,
+    meeting_id,
+    meeting_title,
+    chunk_index: i,
+    start_time: chunk.startTime,
+    end_time: chunk.endTime,
+    project_id: PROJECT_ID,
+  }));
+
+  await qdrant.upsert({
+    indexName: CHUNKS_COLLECTION,
+    vectors: embeddings,
+    metadata,
+  });
+
+  return { chunks_stored: chunks.length };
+}
 
 // ---------------------------------------------------------------------------
-// Tool 7: Dependency resolution (P2-10)
+// Step 7: Dependency resolution (P2-10)
 // For each item with dependency_hints, embeds the hint phrase and searches
 // Qdrant meeting_items filtered by project_id. Links items with similarity > 0.7.
 // Uses raw Qdrant REST so we can pass the project_id payload filter.
 // ---------------------------------------------------------------------------
-const resolveDependenciesTool = createTool({
-  id: "resolve-dependencies",
-  description:
-    "For each item with dependency_hints, embed each hint and find the best matching " +
-    "item in the same project via Qdrant (similarity > 0.7). Writes resolved item IDs " +
-    "to the depends_on column in Supabase.",
-  inputSchema: z.object({
-    stored_items: z.array(StoredItemSchema),
-    project_id: z.string(),
-  }),
-  outputSchema: z.object({
-    dependencies_resolved: z.number(),
-    log: z.array(z.string()),
-  }),
-  execute: async (inputData) => {
-    const { stored_items, project_id } = inputData;
-    let dependencies_resolved = 0;
-    const log: string[] = [];
+async function resolveDependencies(input: {
+  stored_items: StoredItem[];
+  project_id: string;
+}): Promise<{ dependencies_resolved: number; log: string[] }> {
+  const { stored_items, project_id } = input;
+  let dependencies_resolved = 0;
+  const log: string[] = [];
 
-    for (const item of stored_items) {
-      if (!item.dependency_hints || item.dependency_hints.length === 0) continue;
+  for (const item of stored_items) {
+    if (!item.dependency_hints || item.dependency_hints.length === 0) continue;
 
-      const resolvedIds: string[] = [];
+    const resolvedIds: string[] = [];
 
-      for (const hint of item.dependency_hints) {
-        const { embedding } = await embed({ model: embeddingModel, value: hint });
+    for (const hint of item.dependency_hints) {
+      const { embedding } = await embed({ model: embeddingModel, value: hint });
 
-        // Raw Qdrant REST search filtered by project_id — @mastra/qdrant has no filter API
-        let matches: Array<{ score: number; payload: Record<string, any> }> = [];
-        try {
-          matches = await qdrantRawSearch(COLLECTION, embedding, 3, {
-            must: [{ key: "project_id", match: { value: project_id } }],
-          });
-        } catch {
-          // Collection may not have project_id indexed yet — fall back to unfiltered
-          const raw = await qdrant.query({
-            indexName: COLLECTION,
-            queryVector: embedding,
-            topK: 3,
-          });
-          matches = raw.map((r: any) => ({ score: r.score ?? 0, payload: r.metadata ?? {} }));
-        }
-
-        // Best match that is not the item itself
-        const best = matches.find((m) => m.payload?.item_id !== item.id);
-
-        if (best && best.score > 0.7) {
-          resolvedIds.push(best.payload.item_id);
-          log.push(
-            `"${item.text.slice(0, 40)}…" → depends on "${String(best.payload.text || "").slice(0, 40)}…" (${best.score.toFixed(2)})`
-          );
-          dependencies_resolved++;
-        }
-      }
-
-      if (resolvedIds.length > 0) {
-        await supabase
-          .from("items")
-          .update({ depends_on: resolvedIds })
-          .eq("id", item.id);
-      }
-    }
-
-    return { dependencies_resolved, log };
-  },
-});
-
-// ---------------------------------------------------------------------------
-// Tool 8: Contradiction detection
-// Similarity-based (score > 0.85) + explicit supersedes_hint resolution.
-// ---------------------------------------------------------------------------
-const detectContradictionsTool = createTool({
-  id: "detect-contradictions",
-  description:
-    "For each new decision, search Qdrant for semantically similar decisions from other " +
-    "meetings (similarity > 0.85). Inserts contradiction records to Supabase. " +
-    "Also resolves explicit supersedes_hint signals.",
-  inputSchema: z.object({
-    stored_items: z.array(StoredItemSchema),
-    meeting_id: z.string(),
-  }),
-  outputSchema: z.object({ contradictions_found: z.number() }),
-  execute: async (inputData) => {
-    const { stored_items, meeting_id } = inputData;
-    let contradictions_found = 0;
-    const decisions = stored_items.filter((i) => i.type === "decision");
-
-    for (const item of decisions) {
-      // Similarity-based contradiction
-      const { embedding } = await embed({ model: embeddingModel, value: item.text });
-      const similar: any[] = await qdrant.query({
-        indexName: COLLECTION,
-        queryVector: embedding,
-        topK: 5,
-      });
-
-      for (const match of similar) {
-        const meta = match.metadata as any;
-        if (
-          meta?.meeting_id !== meeting_id &&
-          (match.score ?? 0) > 0.85 &&
-          meta?.text !== item.text
-        ) {
-          await supabase.from("contradictions").insert({
-            item_a_id: meta.item_id,
-            item_b_id: item.id,
-            description: `"${item.text.slice(0, 80)}" may contradict "${String(meta.text).slice(0, 80)}" (similarity: ${Number(match.score ?? 0).toFixed(2)})`,
-          });
-          contradictions_found++;
-          break;
-        }
-      }
-
-      // Explicit supersedes_hint resolution
-      if (item.supersedes_hint) {
-        const { embedding: hintEmbed } = await embed({
-          model: embeddingModel,
-          value: item.supersedes_hint,
+      // Raw Qdrant REST search filtered by project_id — @mastra/qdrant has no filter API
+      let matches: Array<{ score: number; payload: Record<string, any> }> = [];
+      try {
+        matches = await qdrantRawSearch(COLLECTION, embedding, 3, {
+          must: [{ key: "project_id", match: { value: project_id } }],
         });
-        const supersededMatches: any[] = await qdrant.query({
+      } catch {
+        // Collection may not have project_id indexed yet — fall back to unfiltered
+        const raw = await qdrant.query({
           indexName: COLLECTION,
-          queryVector: hintEmbed,
+          queryVector: embedding,
           topK: 3,
         });
-        const superseded = supersededMatches.find(
-          (m) =>
-            (m.metadata as any)?.type === "decision" &&
-            (m.metadata as any)?.meeting_id !== meeting_id
+        matches = raw.map((r: any) => ({ score: r.score ?? 0, payload: r.metadata ?? {} }));
+      }
+
+      // Best match that is not the item itself
+      const best = matches.find((m) => m.payload?.item_id !== item.id);
+
+      if (best && best.score > 0.7) {
+        resolvedIds.push(best.payload.item_id);
+        log.push(
+          `"${item.text.slice(0, 40)}…" → depends on "${String(best.payload.text || "").slice(0, 40)}…" (${best.score.toFixed(2)})`
         );
-        if (superseded) {
-          const sm = superseded.metadata as any;
-          await supabase.from("contradictions").insert({
-            item_a_id: sm.item_id,
-            item_b_id: item.id,
-            description: `"${item.text.slice(0, 80)}" supersedes "${String(sm.text).slice(0, 80)}" — ${item.supersedes_hint}`,
-          });
-          contradictions_found++;
-        }
+        dependencies_resolved++;
       }
     }
 
-    return { contradictions_found };
-  },
-});
+    if (resolvedIds.length > 0) {
+      await supabase
+        .from("items")
+        .update({ depends_on: resolvedIds })
+        .eq("id", item.id);
+    }
+  }
+
+  return { dependencies_resolved, log };
+}
 
 // ---------------------------------------------------------------------------
-// Supervisor Agent — orchestrates all 8 tools in order
+// Step 8: Contradiction detection
+// Similarity-based (score > 0.85) + explicit supersedes_hint resolution.
 // ---------------------------------------------------------------------------
-const supervisorAgent = new Agent({
-  id: "supervisor-agent",
-  name: "Helm Pipeline Supervisor",
-  model: MASTRA_GEMINI_MODEL,
-  instructions: `You are the Helm Pipeline Supervisor. The raw transcript has already passed an injection-safety check before reaching you. When given a JSON object with "title" and "transcript" fields, call the tools in EXACTLY this order:
+async function detectContradictions(input: {
+  stored_items: StoredItem[];
+  meeting_id: string;
+}): Promise<{ contradictions_found: number }> {
+  const { stored_items, meeting_id } = input;
+  let contradictions_found = 0;
+  const decisions = stored_items.filter((i) => i.type === "decision");
 
-1. run-extraction — pass the transcript to extract all decisions and action items.
-2. score-trust-items — pass the extracted items, the transcript, and the meeting_title for Enkrypt trust scoring.
-3. redact-pii — pass the scored_items from step 2 as "items". Returns redacted_items with PII tokens replaced.
-4. persist-pipeline — pass meeting_title, transcript, and the redacted_items from step 3 as "scored_items". Returns meeting_id and stored_items.
-5. embed-transcript-chunks — pass transcript, meeting_id (from step 4), and meeting_title. Chunks and embeds the full transcript.
-6. resolve-dependencies — pass stored_items (from step 4) and project_id="${PROJECT_ID}". Links dependency_hints to real item IDs.
-7. detect-contradictions — pass stored_items (from step 4) and meeting_id (from step 4).
+  for (const item of decisions) {
+    // Similarity-based contradiction
+    const { embedding } = await embed({ model: embeddingModel, value: item.text });
+    const similar: any[] = await qdrant.query({
+      indexName: COLLECTION,
+      queryVector: embedding,
+      topK: 5,
+    });
 
-After ALL seven tools complete successfully, respond with ONLY this JSON (no prose, no markdown):
-{
-  "meeting_id": "<uuid from step 4>",
-  "items_count": <total stored>,
-  "items_auto": <review_state=auto count>,
-  "items_review": <review_state=pending_review count>,
-  "items_quarantined": <review_state=quarantined count>,
-  "pii_found": <number from step 3>,
-  "chunks_stored": <number from step 5>,
-  "dependencies_resolved": <number from step 6>,
-  "contradictions_found": <number from step 7>,
-  "steps": [
-    "Extracted <N> items",
-    "Trust scored <N> items",
-    "PII scan: <N> token(s) redacted",
-    "Stored <N> items to Supabase + Qdrant",
-    "Chunked transcript into <N> segments",
-    "Resolved <N> dependencies",
-    "Contradiction check: <N> conflict(s) found"
-  ]
-}`,
-  tools: {
-    runExtraction: runExtractionTool,
-    scoreTrustItems: scoreTrustItemsTool,
-    piiRedact: piiRedactTool,
-    persistPipeline: persistPipelineTool,
-    embedTranscriptChunks: embedTranscriptChunksTool,
-    resolveDependencies: resolveDependenciesTool,
-    detectContradictions: detectContradictionsTool,
-  },
-});
+    for (const match of similar) {
+      const meta = match.metadata as any;
+      if (
+        meta?.meeting_id !== meeting_id &&
+        (match.score ?? 0) > 0.85 &&
+        meta?.text !== item.text
+      ) {
+        await supabase.from("contradictions").insert({
+          item_a_id: meta.item_id,
+          item_b_id: item.id,
+          description: `"${item.text.slice(0, 80)}" may contradict "${String(meta.text).slice(0, 80)}" (similarity: ${Number(match.score ?? 0).toFixed(2)})`,
+        });
+        contradictions_found++;
+        break;
+      }
+    }
+
+    // Explicit supersedes_hint resolution
+    if (item.supersedes_hint) {
+      const { embedding: hintEmbed } = await embed({
+        model: embeddingModel,
+        value: item.supersedes_hint,
+      });
+      const supersededMatches: any[] = await qdrant.query({
+        indexName: COLLECTION,
+        queryVector: hintEmbed,
+        topK: 3,
+      });
+      const superseded = supersededMatches.find(
+        (m) =>
+          (m.metadata as any)?.type === "decision" &&
+          (m.metadata as any)?.meeting_id !== meeting_id
+      );
+      if (superseded) {
+        const sm = superseded.metadata as any;
+        await supabase.from("contradictions").insert({
+          item_a_id: sm.item_id,
+          item_b_id: item.id,
+          description: `"${item.text.slice(0, 80)}" supersedes "${String(sm.text).slice(0, 80)}" — ${item.supersedes_hint}`,
+        });
+        contradictions_found++;
+      }
+    }
+  }
+
+  return { contradictions_found };
+}
 
 // ---------------------------------------------------------------------------
 // Audio transcription via Groq Whisper (verbose_json for timestamps)
@@ -939,6 +849,18 @@ async function transcribeAudio(
 
 // ---------------------------------------------------------------------------
 // Pipeline API route — accepts JSON { transcript, title } OR multipart audio
+//
+// Runs the 7-step pipeline as plain sequential code (extract -> score ->
+// redact-pii -> persist -> embed-chunks -> resolve-deps -> contradictions)
+// instead of an LLM-orchestrated multi-tool agent. The agentic version had
+// one LLM call decide which of 7 tools to invoke next; on Featherless's
+// open-weight models that dynamic tool-selection was unreliable (malformed
+// tool-call arguments, or — worse — the model skipping tool execution
+// entirely and fabricating a plausible-looking success summary, confirmed by
+// zero rows written to Supabase despite a 200 response). The sequence here
+// is fixed and known ahead of time, so there was never a real need for an
+// LLM to "decide" the order — only the extraction step genuinely needs the
+// LLM, for turning transcript text into structured items.
 // ---------------------------------------------------------------------------
 export async function POST(req: NextRequest) {
   try {
@@ -1040,25 +962,66 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const result = await withLLMTrace(
-      { model: GEMINI_MODEL_NAME, endpoint: "/api/pipeline", label: "pipeline-supervisor" },
-      () =>
-        supervisorAgent.generate(
-          [
-            {
-              role: "user",
-              content: JSON.stringify({ title, transcript }),
-            },
-          ],
-          { maxSteps: 12 }
-        )
-    );
+    // 1. Extract
+    const extraction = await runExtraction(transcript);
 
-    const summary = JSON.parse(
-      result.text.trim().replace(/^```(?:json)?\s*/, "").replace(/```\s*$/, "").trim()
-    );
+    // 2. Trust score (Enkrypt Checkpoints 2 + 3)
+    const scoring = await scoreTrustItems({
+      items: extraction.items,
+      transcript,
+      meeting_title: title,
+    });
 
-    return NextResponse.json({ success: true, ...summary });
+    // 3. Redact PII (Enkrypt Checkpoint 3)
+    const piiResult = await piiRedact({ items: scoring.scored_items });
+
+    // 4. Persist to Supabase + Qdrant
+    const persisted = await persistPipeline({
+      meeting_title: title,
+      transcript,
+      scored_items: piiResult.redacted_items,
+    });
+
+    // 5. Chunk + embed full transcript
+    const chunked = await embedTranscriptChunks({
+      transcript,
+      meeting_id: persisted.meeting_id,
+      meeting_title: title,
+    });
+
+    // 6. Resolve dependencies
+    const deps = await resolveDependencies({
+      stored_items: persisted.stored_items,
+      project_id: PROJECT_ID,
+    });
+
+    // 7. Detect contradictions
+    const contradictions = await detectContradictions({
+      stored_items: persisted.stored_items,
+      meeting_id: persisted.meeting_id,
+    });
+
+    return NextResponse.json({
+      success: true,
+      meeting_id: persisted.meeting_id,
+      items_count: persisted.stored_items.length,
+      items_auto: persisted.items_auto,
+      items_review: persisted.items_review,
+      items_quarantined: persisted.items_quarantined,
+      pii_found: piiResult.pii_found,
+      chunks_stored: chunked.chunks_stored,
+      dependencies_resolved: deps.dependencies_resolved,
+      contradictions_found: contradictions.contradictions_found,
+      steps: [
+        `Extracted ${extraction.items.length} items`,
+        `Trust scored ${scoring.scored_items.length} items`,
+        `PII scan: ${piiResult.pii_found} token(s) redacted`,
+        `Stored ${persisted.stored_items.length} items to Supabase + Qdrant`,
+        `Chunked transcript into ${chunked.chunks_stored} segments`,
+        `Resolved ${deps.dependencies_resolved} dependencies`,
+        `Contradiction check: ${contradictions.contradictions_found} conflict(s) found`,
+      ],
+    });
   } catch (error: any) {
     console.error("Pipeline error:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });

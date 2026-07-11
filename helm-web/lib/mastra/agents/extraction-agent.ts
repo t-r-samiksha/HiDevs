@@ -1,5 +1,5 @@
 import { Agent } from "@mastra/core/agent";
-import { MASTRA_GEMINI_MODEL } from "@/lib/model";
+import { generationModel } from "@/lib/model";
 
 /**
  * Extraction agent used by the eval runner (and registered in the Mastra
@@ -8,7 +8,7 @@ import { MASTRA_GEMINI_MODEL } from "@/lib/model";
 export const extractionAgent = new Agent({
   id: "extraction-agent",
   name: "Extraction Agent",
-  model: MASTRA_GEMINI_MODEL,
+  model: generationModel,
   instructions: `You read a meeting transcript and extract every DECISION and ACTION ITEM.
 
 Return ONLY JSON of the form:
