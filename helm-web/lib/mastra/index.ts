@@ -28,6 +28,16 @@ import {
   sourceQuotePresenceScorer,
 } from "./scorers/extraction-scorers";
 
+// Vercel's deployed function bundle is read-only — only /tmp is writable.
+// A relative "./helm-mastra.db" path resolves into that read-only bundle
+// there and SQLite fails to even open the file (ConnectionFailed, code 14),
+// which crashes at module load for every route that imports @/lib/mastra.
+// /tmp is ephemeral per container, but that's fine here: nothing currently
+// depends on this file surviving across invocations (see the note in
+// app/api/followup/resolve/route.ts) — it just needs to be openable so
+// construction and same-invocation writes (e.g. draft's run.start()) work.
+const dbUrl = process.env.MASTRA_DB_URL ?? (process.env.VERCEL ? "file:/tmp/helm-mastra.db" : "file:./helm-mastra.db");
+
 export const mastra = new Mastra({
   workflows: {
     riskMonitorWorkflow,
@@ -47,7 +57,7 @@ export const mastra = new Mastra({
     typeAccuracyScorer,
     sourceQuotePresenceScorer,
   },
-  storage: new LibSQLStore({ id: "helm-mastra", url: "file:./helm-mastra.db" }),
+  storage: new LibSQLStore({ id: "helm-mastra", url: dbUrl }),
 });
 
 /**
