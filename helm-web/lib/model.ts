@@ -50,3 +50,17 @@ export const generationModel = featherless(GENERATION_MODEL_NAME);
  */
 export const GEMINI_ONLY_MODEL_NAME = process.env.GEMINI_MODEL || "gemini-flash-latest";
 export const geminiModel = google(GEMINI_ONLY_MODEL_NAME);
+
+/**
+ * Reasoning models (Qwen3 via Featherless) prefix prose output with a
+ * <think>...</think> chain-of-thought block. For JSON call sites the pipeline
+ * slices to the outer braces, but prose answers (search "ask" mode, project
+ * briefs) must strip the reasoning explicitly or it leaks into the UI.
+ */
+export function stripReasoning(text: string): string {
+  let out = (text ?? "").replace(/<think>[\s\S]*?<\/think>/gi, "");
+  // Opener with a stray close but no matching open (rare truncation): the real
+  // answer is whatever follows the last </think>.
+  if (/<\/think>/i.test(out)) out = out.replace(/^[\s\S]*<\/think>/i, "");
+  return out.replace(/<\/?think>/gi, "").trim();
+}

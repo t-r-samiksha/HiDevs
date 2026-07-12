@@ -173,7 +173,7 @@ export default function MeetingsPage() {
               </div>
               {projects.length > 0 && (
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-slate-400">Project</label>
+                  <label className="mb-1 block text-xs font-medium text-slate-400">Workspace</label>
                   <select
                     value={formProjectId}
                     onChange={(e) => setFormProjectId(e.target.value)}

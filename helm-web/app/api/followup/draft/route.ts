@@ -71,15 +71,47 @@ export async function POST(req: NextRequest) {
     const today = new Date().toISOString().split("T")[0];
     const daysOverdue = item.deadline_iso ? Math.max(0, daysBetween(item.deadline_iso, today)) : 0;
 
+    // FIX 2 — enrich the draft with context the workflow prompt reads off the
+    // existing inputData fields (item_text + deadline), since the prompt itself
+    // lives inside the workflow and isn't edited here.
+    let meetingLabel = "";
+    if (item.meeting_id) {
+      const { data: meeting } = await supabase
+        .from("meetings")
+        .select("title, date")
+        .eq("id", item.meeting_id)
+        .single();
+      if (meeting?.title) {
+        const when = meeting.date ? ` on ${String(meeting.date).split("T")[0]}` : "";
+        meetingLabel = ` (agreed in "${meeting.title}"${when})`;
+      }
+    }
+    const deps: string[] = Array.isArray(item.dependency_hints) ? item.dependency_hints : [];
+    const enrichedText = deps.length ? `${item.text} — blocked on: ${deps.join(", ")}` : item.text;
+    const enrichedDeadline = `${item.deadline_raw || item.deadline_iso || "not specified"}${meetingLabel}`;
+
+    // Owner email (matched by name) so the UI can offer a "Send via email"
+    // option when a real inbox + Resend key are available.
+    let ownerEmail: string | null = null;
+    if (item.owner) {
+      const { data: ownerRow } = await supabase
+        .from("users")
+        .select("email")
+        .ilike("name", item.owner)
+        .limit(1);
+      ownerEmail = ownerRow?.[0]?.email ?? null;
+    }
+    const canEmail = !!ownerEmail && !!process.env.RESEND_API_KEY;
+
     // ── Run the HITL workflow: draft → policy check → SUSPEND ─────────────────
     const run = await mastra.getWorkflow("followupHitlWorkflow").createRun();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const result = (await run.start({
       inputData: {
         item_id: item.id,
-        item_text: item.text,
+        item_text: enrichedText,
         owner: item.owner || "the assignee",
-        deadline: item.deadline_raw || item.deadline_iso || "not specified",
+        deadline: enrichedDeadline,
         days_overdue: daysOverdue,
         tier,
         manager_cc: managerName || undefined,
@@ -91,7 +123,13 @@ export async function POST(req: NextRequest) {
       throw new Error(result.error?.message || "Follow-up workflow failed during draft/policy");
     }
 
-    const payload = result.suspendPayload ?? result.steps?.["human-approval"]?.suspendPayload ?? {};
+    // Mastra exposes the suspend payload both at the top level and under the
+    // suspended step — but the top-level copy can be an empty {} while the real
+    // one (with draft + policy_passed) lives on steps["human-approval"]. Merge,
+    // letting the step-level payload win, so we never read the empty shell.
+    const stepPayload = result.steps?.["human-approval"]?.suspendPayload ?? {};
+    const topPayload = result.suspendPayload ?? {};
+    const payload = { ...topPayload, ...stepPayload };
     const draft: string = payload.draft ?? "";
     const policyPassed: boolean = payload.policy_passed ?? false;
 
@@ -128,6 +166,8 @@ export async function POST(req: NextRequest) {
       policy_passed: true,
       needs_attention: false,
       owner: item.owner,
+      owner_email: ownerEmail,
+      can_email: canEmail,
       item_text: item.text,
       ...(tier === 2 && managerName ? { manager_cc: managerName } : {}),
     });

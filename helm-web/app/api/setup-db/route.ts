@@ -15,6 +15,13 @@ const SETUP_SQL = `
 -- data instead of guessing from the single trust_score number.
 ALTER TABLE items ADD COLUMN IF NOT EXISTS enkrypt_checks JSONB;
 
+-- Owner resolution: the matched user (id + email) for follow-up delivery, and a
+-- human-readable reason when an item was routed to /review (e.g. an ambiguous
+-- owner name that needs manual assignment).
+ALTER TABLE items ADD COLUMN IF NOT EXISTS owner_id UUID REFERENCES users(id);
+ALTER TABLE items ADD COLUMN IF NOT EXISTS owner_email TEXT;
+ALTER TABLE items ADD COLUMN IF NOT EXISTS review_reason TEXT;
+
 -- Persist the Mastra HITL workflow run id on each escalation so /api/followup/resolve
 -- can reconstruct and resume the suspended run from storage even after a restart.
 ALTER TABLE escalation_logs ADD COLUMN IF NOT EXISTS run_id TEXT;

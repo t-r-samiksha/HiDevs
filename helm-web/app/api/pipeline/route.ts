@@ -529,9 +529,39 @@ async function persistPipeline(input: {
     .single();
   if (meetingErr) throw new Error(meetingErr.message);
 
+  // FIX 1 — resolve owner NAMES to real users so follow-ups know who to email.
+  // Exactly-one name match → assign id + email. Ambiguous/none → leave for
+  // manual assignment (owner name stays as-is so filtering still works).
+  const { data: allUsers } = await supabase.from("users").select("id, name, email");
+  const usersByName = new Map<string, { id: string; email: string }[]>();
+  for (const u of allUsers || []) {
+    const k = String(u.name || "").trim().toLowerCase();
+    if (!k) continue;
+    if (!usersByName.has(k)) usersByName.set(k, []);
+    usersByName.get(k)!.push({ id: u.id, email: u.email });
+  }
+  function resolveOwner(name: string | null): {
+    owner_id: string | null;
+    owner_email: string | null;
+    ambiguous: boolean;
+  } {
+    const matches = name ? usersByName.get(name.trim().toLowerCase()) ?? [] : [];
+    if (matches.length === 1) {
+      return { owner_id: matches[0].id, owner_email: matches[0].email, ambiguous: false };
+    }
+    // >1 match → can't safely auto-assign; a manager picks the right person in /review.
+    return { owner_id: null, owner_email: null, ambiguous: matches.length > 1 };
+  }
+
   const storedItems: StoredItem[] = [];
 
   for (const item of scored_items) {
+    const { owner_id, owner_email, ambiguous } = resolveOwner(item.owner || null);
+    // Ambiguous owner → route to the review queue for manual assignment, even
+    // if the trust score is high enough to auto-file.
+    const reviewReason = ambiguous
+      ? `Multiple users named '${item.owner}' — manual assignment needed`
+      : null;
     const basePayload = {
       meeting_id: meeting.id,
       project_id: PROJECT_ID,
@@ -542,20 +572,20 @@ async function persistPipeline(input: {
       deadline_iso: item.deadline?.resolved_iso || null,
       status: "open",
       trust_score: item.trust_score,
-      review_state: item.review_state,
+      review_state: ambiguous ? "pending_review" : item.review_state,
       source_quote: item.source_quote,
       source_timestamp: item.source_timestamp || null,
       dependency_hints: item.dependency_hints || [],
       supersedes_hint: item.supersedes_hint || null,
     };
 
-    // Store the real per-check Enkrypt breakdown so /api/items/[id]/trust
-    // can return actual data instead of guessing from trust_score alone.
-    // Falls back gracefully if the enkrypt_checks column hasn't been added
-    // yet (see the DDL in /api/setup-db) — never blocks item persistence.
+    // Primary insert carries the optional columns (enkrypt_checks, owner_id,
+    // owner_email, review_reason). If any of those columns don't exist yet,
+    // fall back to the guaranteed base payload so persistence never breaks —
+    // the review_state override still routes ambiguous items to /review.
     let { data: dbItem, error: insertErr } = await supabase
       .from("items")
-      .insert({ ...basePayload, enkrypt_checks: item.enkrypt_checks })
+      .insert({ ...basePayload, enkrypt_checks: item.enkrypt_checks, owner_id, owner_email, review_reason: reviewReason })
       .select()
       .single();
 

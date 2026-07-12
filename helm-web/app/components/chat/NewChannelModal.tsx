@@ -111,7 +111,7 @@ export default function NewChannelModal({
 
         <p className="mb-3 text-xs text-slate-500">
           {selected.size === 0
-            ? "Leave everyone unchecked to make this an open channel visible to the whole project."
+            ? "Leave everyone unchecked to make this an open channel visible to the whole workspace."
             : "Only you and the people you check will be able to see this channel."}
         </p>
 

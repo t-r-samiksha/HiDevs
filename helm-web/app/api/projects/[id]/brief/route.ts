@@ -1,7 +1,7 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { google } from "@ai-sdk/google";
-import { generationModel } from "@/lib/model";
+import { generationModel, stripReasoning } from "@/lib/model";
 import { embed, generateText } from "ai";
 
 const supabase = createClient(
@@ -126,11 +126,12 @@ export async function POST(
       contextLines.push(`[${p.meeting_title || "Transcript"}] ${p.chunk_text || ""}`);
     }
 
-    const { text: brief } = await generateText({
+    const { text: briefRaw } = await generateText({
       model: generationModel,
       system: BRIEF_SYSTEM_PROMPT,
-      prompt: `Project context (${sourcesCount} sources):\n\n${contextLines.join("\n")}`,
+      prompt: `/no_think Project context (${sourcesCount} sources):\n\n${contextLines.join("\n")}`,
     });
+    const brief = stripReasoning(briefRaw);
 
     const generatedAt = new Date().toISOString();
 

@@ -62,7 +62,13 @@ export async function PATCH(
 ) {
   try {
     const body = await req.json();
-    const allowed = ["text", "owner", "deadline_raw", "deadline_iso", "status", "depends_on"];
+    const allowed = [
+      "text", "owner", "deadline_raw", "deadline_iso", "status", "depends_on",
+      // Owner-conflict resolution from /review: assign the right user + clear the flag.
+      "owner_email", "owner_id", "review_state", "review_reason",
+    ];
+    // These may not exist in older DBs — drop them and retry if the column is missing.
+    const optional = new Set(["owner_email", "owner_id", "review_reason"]);
     const updates: Record<string, any> = {};
     for (const key of allowed) {
       if (key in body) updates[key] = body[key];
@@ -72,12 +78,24 @@ export async function PATCH(
       return NextResponse.json({ error: "No valid fields to update" }, { status: 400 });
     }
 
-    const { data, error } = await supabase
+    const itemId = (await params).id;
+    let { data, error } = await supabase
       .from("items")
       .update(updates)
-      .eq("id", (await params).id)
+      .eq("id", itemId)
       .select()
       .single();
+
+    if (error && /Could not find/.test(error.message)) {
+      const safe: Record<string, any> = {};
+      for (const [k, v] of Object.entries(updates)) if (!optional.has(k)) safe[k] = v;
+      ({ data, error } = await supabase
+        .from("items")
+        .update(safe)
+        .eq("id", itemId)
+        .select()
+        .single());
+    }
 
     if (error) throw new Error(error.message);
     return NextResponse.json({ item: data });

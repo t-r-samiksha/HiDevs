@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { google } from "@ai-sdk/google";
-import { GENERATION_MODEL_NAME, generationModel } from "@/lib/model";
+import { GENERATION_MODEL_NAME, generationModel, stripReasoning } from "@/lib/model";
 import { embed, generateText } from "ai";
 import { checkRateLimit, clientKey, sanitizeInput, securityHeaders } from "@/lib/security";
 import { withLLMTrace } from "@/lib/observability";
@@ -184,7 +184,9 @@ export async function POST(req: NextRequest) {
         .map((r, i) => `[${i + 1}] [${r.meeting_title}] ${r.text}`)
         .join("\n");
 
-      const prompt = `Context:\n${contextStr}\n\nQuestion: ${query}`;
+      // "/no_think" keeps Qwen3 from emitting a long reasoning block (which can
+      // hit Featherless's gateway timeout); stripReasoning() clears the residue.
+      const prompt = `/no_think Context:\n${contextStr}\n\nQuestion: ${query}`;
       // Trace the LLM call (latency, tokens, prompt hash, status).
       const { text: answer } = await withLLMTrace(
         { model: GENERATION_MODEL_NAME, endpoint: "/api/search[ask]", prompt },
@@ -197,7 +199,7 @@ export async function POST(req: NextRequest) {
       );
 
       return NextResponse.json(
-        { answer: answer.trim(), results: contextResults },
+        { answer: stripReasoning(answer), results: contextResults },
         { headers: securityHeaders() }
       );
     }

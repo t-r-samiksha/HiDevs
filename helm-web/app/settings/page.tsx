@@ -91,7 +91,7 @@ export default function SettingsPage() {
       ({ error } = await supabase.from("projects").update({ name: name.trim() }).eq("id", project.id));
     }
     setSavingProject(false);
-    flash(error ? `Error: ${error.message}` : "Project saved");
+    flash(error ? `Error: ${error.message}` : "Workspace saved");
   }
 
   async function changeRole(userId: string, role: string) {

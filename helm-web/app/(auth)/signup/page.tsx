@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { siteOrigin } from "@/lib/siteUrl";
 
 type Role = "employee" | "manager" | "vp";
 
@@ -29,8 +30,11 @@ export default function SignupPage() {
       options: {
         data: { name, role },
         // Send the confirmation link back to THIS deployment (not localhost).
-        // Supabase still requires this URL to be allow-listed in the dashboard.
-        emailRedirectTo: `${window.location.origin}/login?verified=1`,
+        // Prefer NEXT_PUBLIC_SITE_URL when set (robust even if signup is ever
+        // triggered from a non-browser origin), else fall back to the current
+        // origin. Supabase still requires this URL to be allow-listed in the
+        // dashboard (Authentication → URL Configuration → Redirect URLs).
+        emailRedirectTo: `${siteOrigin()}/login?verified=1`,
       },
     });
 

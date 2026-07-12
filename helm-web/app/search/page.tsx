@@ -87,7 +87,7 @@ export default function SearchPage() {
           {/* TODO: project + date-range ("time travel") filters once the search
               API returns project_id and meeting date in result metadata. */}
           <p className="text-xs text-slate-600">
-            Project &amp; date filters arrive once search results include those fields.
+            Workspace &amp; date filters arrive once search results include those fields.
           </p>
         </aside>
 

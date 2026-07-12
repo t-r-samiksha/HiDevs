@@ -8,8 +8,14 @@
 import { createWorkflow, createStep } from "@mastra/core/workflows";
 import { z } from "zod";
 import { followupAgent } from "../agents/followup-agent";
+import { stripReasoning } from "@/lib/model";
 
 const ENKRYPT_KEY = process.env.ENKRYPT_API_KEY!;
+
+// Conduct standard enforced on every AI-drafted nudge (Enkrypt Checkpoint 4).
+const FOLLOWUP_POLICY_TEXT =
+  "Messages must be professional and respectful. No harassment, threats, insults, " +
+  "discriminatory language, or sharing of personal contact details or credentials.";
 
 // Standalone schemas so downstream steps can `.extend()` them (a step's own
 // `.outputSchema` is Mastra-wrapped and not extendable).
@@ -46,7 +52,10 @@ const draftNudgeStep = createStep({
   outputSchema: draftOutputSchema,
   execute: async ({ inputData }) => {
     const { item_id, item_text, owner, deadline, days_overdue, tier, manager_cc } = inputData;
-    const prompt = `Draft a Tier ${tier} follow-up for this overdue task:
+    // "/no_think" disables Qwen3's long chain-of-thought — without it the model
+    // streams a huge <think> block that intermittently trips Featherless's
+    // gateway timeout (504) on this step. Short prompt in, short message out.
+    const prompt = `/no_think Draft a Tier ${tier} follow-up for this overdue task:
 - Task: "${item_text}"
 - Owner: ${owner}
 - Deadline was: ${deadline}
@@ -56,7 +65,9 @@ ${tier === 1 ? "Keep it gentle — this is the first nudge." : "This is an escal
     }`;
 
     const response = await followupAgent.generate([{ role: "user", content: prompt }]);
-    return { item_id, item_text, owner, draft: response.text, tier };
+    // Qwen3 (Featherless) prefixes a <think> block — strip it so the emailed
+    // nudge and the Enkrypt policy check see only the message text.
+    return { item_id, item_text, owner, draft: stripReasoning(response.text), tier };
   },
 });
 
@@ -73,12 +84,23 @@ const policyCheckStep = createStep({
         headers: { "Content-Type": "application/json", apikey: ENKRYPT_KEY },
         body: JSON.stringify({
           text: inputData.draft,
-          detectors: { policy_violation: { enabled: true }, toxicity: { enabled: true } },
+          detectors: {
+            // policy_violation REQUIRES a policy_text (or coc_policy_name) — without
+            // one Enkrypt returns 400 and the check silently no-ops. This is the
+            // conduct standard follow-up nudges are held to.
+            policy_violation: { enabled: true, policy_text: FOLLOWUP_POLICY_TEXT },
+            toxicity: { enabled: true },
+          },
         }),
       });
       const data = await res.json();
-      const policyOk = (data.summary?.policy_violation ?? 0) === 0;
-      const toxicityOk = (data.summary?.toxicity ?? 0) === 0;
+      const summary = data.summary ?? {};
+      const policyOk = (summary.policy_violation ?? 0) === 0;
+      // Enkrypt returns toxicity as an array of detected categories ([] = clean),
+      // not a number — treat any non-empty list as a failure.
+      const toxicityOk = Array.isArray(summary.toxicity)
+        ? summary.toxicity.length === 0
+        : (summary.toxicity ?? 0) === 0;
       return { ...inputData, policy_passed: policyOk && toxicityOk };
     } catch {
       // If Enkrypt is unreachable, fail closed on policy so a human still reviews.

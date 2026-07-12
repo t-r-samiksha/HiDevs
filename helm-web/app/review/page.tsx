@@ -20,9 +20,12 @@ type Item = {
   status: string;
   trust_score: number;
   review_state: ReviewState;
+  review_reason?: string | null;
   source_quote: string | null;
   meeting_id: string;
 };
+
+type DirUser = { id: string; name: string; email: string | null };
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -42,6 +45,7 @@ export default function ReviewPage() {
   useManagerGuard();
   const [items, setItems]       = useState<Item[]>([]);
   const [meetingTitles, setMeetingTitles] = useState<Map<string, string>>(new Map());
+  const [usersByName, setUsersByName] = useState<Map<string, DirUser[]>>(new Map());
   const [loading, setLoading]   = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -55,13 +59,14 @@ export default function ReviewPage() {
     setLoading(true);
     setLoadError(null);
     try {
-      const [itemsRes, meetingsRes] = await Promise.all([
+      const [itemsRes, meetingsRes, usersRes] = await Promise.all([
         supabase
           .from("items")
           .select("*")
           .in("review_state", ["pending_review", "quarantined"])
           .order("created_at", { ascending: false }),
         supabase.from("meetings").select("id, title"),
+        supabase.from("users").select("id, name, email"),
       ]);
       if (itemsRes.error) throw new Error(itemsRes.error.message);
       setItems(itemsRes.data ?? []);
@@ -70,6 +75,16 @@ export default function ReviewPage() {
         m.set(r.id, r.title)
       );
       setMeetingTitles(m);
+      // Directory keyed by lowercased name — powers owner-conflict detection
+      // and the assignment dropdown.
+      const u = new Map<string, DirUser[]>();
+      (usersRes.data ?? []).forEach((r: DirUser) => {
+        const k = String(r.name || "").trim().toLowerCase();
+        if (!k) return;
+        if (!u.has(k)) u.set(k, []);
+        u.get(k)!.push(r);
+      });
+      setUsersByName(u);
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : "Failed to load the review queue.");
     } finally {
@@ -107,6 +122,43 @@ export default function ReviewPage() {
       setEditingId(null);
       const labels = { accept: "Accepted", edit: "Saved & accepted", discard: "Discarded" };
       showToast(labels[action], true);
+    } finally {
+      setActioning(null);
+    }
+  }
+
+  // ── owner-conflict helpers ──
+  // An item is an owner conflict when its owner name maps to more than one user
+  // in the directory (or the pipeline flagged it via review_reason). Works even
+  // if the review_reason column hasn't been added yet.
+  function conflictUsers(item: Item): DirUser[] {
+    if (!item.owner) return [];
+    const matches = usersByName.get(item.owner.trim().toLowerCase()) ?? [];
+    const flagged = item.review_reason?.includes("Multiple users") ?? false;
+    return matches.length > 1 || (flagged && matches.length > 0) ? matches : [];
+  }
+
+  async function assignOwner(item: Item, user: DirUser) {
+    setActioning(item.id);
+    try {
+      const res = await fetch(`/api/items/${item.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          owner: user.name,
+          owner_email: user.email,
+          owner_id: user.id,
+          review_state: "auto",
+          review_reason: null,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        showToast(data.error ?? "Assignment failed", false);
+        return;
+      }
+      setItems((prev) => prev.filter((i) => i.id !== item.id));
+      showToast(`Assigned to ${user.name}`, true);
     } finally {
       setActioning(null);
     }
@@ -234,23 +286,39 @@ export default function ReviewPage() {
               </div>
             </div>
             <div className="space-y-3">
-              {pendingReview.map((item) => (
-                <ReviewCard
-                  key={item.id}
-                  item={item}
-                  meetingTitle={meetingTitles.get(item.meeting_id)}
-                  editingId={editingId}
-                  editText={editText}
-                  busy={busy(item.id)}
-                  onEdit={() => { setEditingId(item.id); setEditText(item.text); }}
-                  onEditChange={setEditText}
-                  onEditCancel={() => setEditingId(null)}
-                  onAccept={() => act(item.id, "accept")}
-                  onSaveEdit={() => act(item.id, "edit", editText)}
-                  onDiscard={() => act(item.id, "discard")}
-                  borderClass="border-amber-200 dark:border-amber-800"
-                />
-              ))}
+              {pendingReview.map((item) => {
+                const conflicts = conflictUsers(item);
+                if (conflicts.length > 0) {
+                  return (
+                    <OwnerConflictCard
+                      key={item.id}
+                      item={item}
+                      candidates={conflicts}
+                      meetingTitle={meetingTitles.get(item.meeting_id)}
+                      busy={busy(item.id)}
+                      onAssign={(user) => assignOwner(item, user)}
+                      onDiscard={() => act(item.id, "discard")}
+                    />
+                  );
+                }
+                return (
+                  <ReviewCard
+                    key={item.id}
+                    item={item}
+                    meetingTitle={meetingTitles.get(item.meeting_id)}
+                    editingId={editingId}
+                    editText={editText}
+                    busy={busy(item.id)}
+                    onEdit={() => { setEditingId(item.id); setEditText(item.text); }}
+                    onEditChange={setEditText}
+                    onEditCancel={() => setEditingId(null)}
+                    onAccept={() => act(item.id, "accept")}
+                    onSaveEdit={() => act(item.id, "edit", editText)}
+                    onDiscard={() => act(item.id, "discard")}
+                    borderClass="border-amber-200 dark:border-amber-800"
+                  />
+                );
+              })}
             </div>
           </section>
         )}
@@ -382,6 +450,83 @@ function ReviewCard({
             </button>
           </>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// OwnerConflictCard — ambiguous owner name, manager picks the right person
+// ---------------------------------------------------------------------------
+
+function OwnerConflictCard({
+  item,
+  candidates,
+  meetingTitle,
+  busy,
+  onAssign,
+  onDiscard,
+}: {
+  item: Item;
+  candidates: DirUser[];
+  meetingTitle?: string;
+  busy: boolean;
+  onAssign: (user: DirUser) => void;
+  onDiscard: () => void;
+}) {
+  const [selectedId, setSelectedId] = useState(candidates[0]?.id ?? "");
+  const selected = candidates.find((u) => u.id === selectedId);
+
+  return (
+    <div
+      className={`bg-white dark:bg-gray-900 border border-amber-300 dark:border-amber-700 rounded-xl p-5 transition-opacity ${
+        busy ? "opacity-50 pointer-events-none" : ""
+      }`}
+    >
+      {/* ── Header ── */}
+      <div className="flex items-center gap-2 mb-2">
+        <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900 text-amber-800 dark:text-amber-200">
+          👥 owner conflict
+        </span>
+        {meetingTitle && (
+          <span className="text-xs text-gray-400 dark:text-gray-500 ml-auto">🎙️ {meetingTitle}</span>
+        )}
+      </div>
+
+      {/* ── Title ── */}
+      <p className="text-sm font-semibold text-gray-900 dark:text-white leading-relaxed mb-1">
+        Owner conflict: {item.text}
+      </p>
+      <p className="text-xs text-amber-700 dark:text-amber-300 mb-4">
+        Multiple users found for &quot;{item.owner}&quot; — pick who this belongs to.
+      </p>
+
+      {/* ── Picker ── */}
+      <div className="flex flex-wrap items-center gap-2">
+        <select
+          value={selectedId}
+          onChange={(e) => setSelectedId(e.target.value)}
+          className="px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+        >
+          {candidates.map((u) => (
+            <option key={u.id} value={u.id}>
+              {u.name}{u.email ? ` — ${u.email}` : ""}
+            </option>
+          ))}
+        </select>
+        <button
+          onClick={() => selected && onAssign(selected)}
+          disabled={!selected}
+          className="px-3 py-1.5 rounded-lg bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 text-xs font-medium hover:bg-green-200 dark:hover:bg-green-800 disabled:opacity-40 transition-colors"
+        >
+          ✓ Assign
+        </button>
+        <button
+          onClick={onDiscard}
+          className="px-3 py-1.5 rounded-lg bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 text-xs font-medium hover:bg-red-200 dark:hover:bg-red-800 transition-colors"
+        >
+          ✕ Discard
+        </button>
       </div>
     </div>
   );

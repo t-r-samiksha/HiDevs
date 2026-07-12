@@ -100,7 +100,7 @@ export default function NewRoomPage() {
         </Field>
 
         {projects.length > 0 && (
-          <Field label="Project">
+          <Field label="Workspace">
             <select
               value={projectId}
               onChange={(e) => setProjectId(e.target.value)}

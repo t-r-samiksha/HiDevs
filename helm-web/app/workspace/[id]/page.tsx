@@ -157,7 +157,7 @@ export default function WorkspacePage() {
       {tab === "meetings" && (
         <div className="space-y-2">
           {meetings.length === 0 ? (
-            <p className="text-sm text-slate-500">No meetings in this project.</p>
+            <p className="text-sm text-slate-500">No meetings in this workspace.</p>
           ) : (
             meetings.map((m) => (
               <Link key={m.id} href={`/meetings/${m.id}`} className="block rounded-xl border border-slate-800 bg-slate-900 p-3 hover:border-slate-600">
