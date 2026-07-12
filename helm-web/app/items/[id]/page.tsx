@@ -30,6 +30,9 @@ export default function ItemDetailPage() {
   const [form, setForm] = useState({ text: "", owner: "", deadline_raw: "", status: "open" as ItemStatus });
   const [saving, setSaving] = useState(false);
   const [drafting, setDrafting] = useState(false);
+  const [draftResult, setDraftResult] = useState<
+    { kind: "success"; owner: string; draft: string } | { kind: "error"; message: string } | null
+  >(null);
 
   async function load() {
     const { data, error } = await supabase.from("items").select("*").eq("id", itemId).single();
@@ -113,9 +116,9 @@ export default function ItemDetailPage() {
       });
       const data = await res.json();
       if (data.escalation_id) {
-        alert(`Follow-up drafted for ${data.owner}!\n\n"${data.draft}"\n\nGo to the Approval Queue to approve or reject.`);
+        setDraftResult({ kind: "success", owner: data.owner, draft: data.draft });
       } else {
-        alert("Failed to draft: " + (data.error || "unknown error"));
+        setDraftResult({ kind: "error", message: data.error || "unknown error" });
       }
     } catch (err) {
       console.error(err);
@@ -146,6 +149,54 @@ export default function ItemDetailPage() {
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-6 md:px-6">
+      {draftResult && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4"
+          onClick={() => setDraftResult(null)}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {draftResult.kind === "success" ? (
+              <>
+                <p className="mb-3 text-sm font-semibold text-white">
+                  ✉️ Follow-up drafted for {draftResult.owner}
+                </p>
+                <blockquote className="mb-4 rounded-lg border-l-2 border-indigo-400 bg-slate-950/60 p-4 text-sm italic leading-relaxed text-slate-200">
+                  {draftResult.draft}
+                </blockquote>
+                <div className="flex items-center gap-3">
+                  <Link
+                    href="/followups"
+                    className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500"
+                  >
+                    Go to Approval Queue
+                  </Link>
+                  <button
+                    onClick={() => setDraftResult(null)}
+                    className="rounded-lg bg-slate-800 px-4 py-2 text-sm text-slate-300 hover:bg-slate-700"
+                  >
+                    Close
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="mb-3 text-sm font-semibold text-red-300">Failed to draft follow-up</p>
+                <p className="mb-4 text-sm text-slate-300">{draftResult.message}</p>
+                <button
+                  onClick={() => setDraftResult(null)}
+                  className="rounded-lg bg-slate-800 px-4 py-2 text-sm text-slate-300 hover:bg-slate-700"
+                >
+                  Close
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       <Link
         href="/items"
         className="mb-4 inline-flex items-center gap-1 text-sm text-slate-400 hover:text-slate-200"

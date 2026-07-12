@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { mastra, followupRuns, type FollowupRun } from "@/lib/mastra";
+import { followupRuns, type FollowupRun } from "@/lib/mastra";
 import { sendEmail } from "@/lib/mailer";
 
 const supabase = createClient(
@@ -26,10 +26,10 @@ async function resolveOwnerEmail(item: {
   return data?.[0]?.email ?? null;
 }
 
-// POST /api/followup/resolve — records the decision AND resumes the suspended
-// Mastra HITL run with { approved }, completing real suspend/resume. The DB
-// update keeps the approval queue working even if the run is no longer in
-// memory (e.g. after a server restart).
+// POST /api/followup/resolve — records the decision in escalation_logs and,
+// when the suspended Mastra HITL run is still in memory (same server
+// instance as the draft call), resumes it with { approved }. See the note
+// above the resume block for why only the in-memory path is attempted.
 export async function POST(req: NextRequest) {
   try {
     const { escalation_id, action } = await req.json();
@@ -90,24 +90,19 @@ export async function POST(req: NextRequest) {
       .eq("id", escalation_id);
     if (error) throw new Error(error.message);
 
-    // Resume the exact suspended HITL run this draft created. Fast path: the
-    // in-memory run. Durable path: reconstruct from LibSQL storage by run_id.
+    // Resume the exact suspended HITL run this draft created. Only the
+    // in-memory fast path can actually work: /api/followup/draft and this
+    // route run as separate Vercel serverless invocations with no shared
+    // memory, and LibSQLStore's "file:./helm-mastra.db" doesn't survive
+    // across invocations on Vercel's ephemeral/read-only filesystem either
+    // — so reconstructing the run from storage by run_id never finds real
+    // suspended state there, and resume() always throws "not suspended."
+    // That fallback was pure dead weight (an extra Supabase round-trip + a
+    // guaranteed-failing Mastra call on every approve/reject), so it's
+    // dropped. The approval decision is still durably recorded in
+    // escalation_logs regardless of whether the in-memory resume succeeds.
     let resumed = false;
-    let run: FollowupRun | undefined = followupRuns.get(String(escalation_id));
-    if (!run) {
-      const { data: log } = await supabase
-        .from("escalation_logs")
-        .select("run_id")
-        .eq("id", escalation_id)
-        .single();
-      if (log?.run_id) {
-        try {
-          run = await mastra.getWorkflow("followupHitlWorkflow").createRun({ runId: log.run_id });
-        } catch (e) {
-          console.error("HITL run reconstruction failed:", e);
-        }
-      }
-    }
+    const run: FollowupRun | undefined = followupRuns.get(String(escalation_id));
     if (run) {
       try {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any

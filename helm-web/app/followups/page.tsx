@@ -99,6 +99,8 @@ export default function FollowupsPage() {
         showToast("ok", "Follow-up rejected — nothing was sent.");
       } else if (data.email_sent) {
         showToast("ok", `Approved & emailed to ${data.sent_to}.`);
+      } else if (data.sent_to) {
+        showToast("err", `Approved and logged, but the email to ${data.sent_to} failed to send.`);
       } else {
         showToast("ok", "Approved and logged. No email on file, so nothing was sent.");
       }
